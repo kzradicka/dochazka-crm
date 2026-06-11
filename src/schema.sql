@@ -43,3 +43,15 @@ CREATE TABLE IF NOT EXISTS shifts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_shifts_starts ON shifts (starts_at);
+
+-- Telefonní čísla přiřazená k objektu. Číslo, ze kterého se volá, určuje objekt.
+-- Jedno číslo patří právě jednomu objektu (UNIQUE).
+CREATE TABLE IF NOT EXISTS site_phones (
+    id           SERIAL PRIMARY KEY,
+    site_id      INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    phone_number TEXT NOT NULL UNIQUE
+);
+CREATE INDEX IF NOT EXISTS idx_site_phones_number ON site_phones (phone_number);
+
+-- Počet hodin u záznamu docházky (pro mzdy). Výchozí 12, lze ručně upravit.
+ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS hours NUMERIC NOT NULL DEFAULT 12;

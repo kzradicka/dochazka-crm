@@ -10,6 +10,10 @@ export default function History() {
   const [filters, setFilters] = useState({ from: '', to: '', employee_id: '', site_id: '' });
   const [loading, setLoading] = useState(false);
 
+  // Inline úprava záznamu
+  const [editId, setEditId] = useState(null);
+  const [editVals, setEditVals] = useState({ hours: 12, site_id: '' });
+
   useEffect(() => {
     api.employees().then(setEmployees).catch(() => {});
     api.sites().then(setSites).catch(() => {});
@@ -22,12 +26,31 @@ export default function History() {
     try { setRows(await api.attendance(q)); } catch {} finally { setLoading(false); }
   }
 
+  function startEdit(r) {
+    setEditId(r.id);
+    setEditVals({ hours: r.hours, site_id: r.site_id || '' });
+  }
+  function cancelEdit() { setEditId(null); }
+  async function saveEdit(id) {
+    await api.updateAttendance(id, {
+      hours: Number(editVals.hours),
+      site_id: editVals.site_id || null,
+    });
+    setEditId(null);
+    load();
+  }
+  async function remove(id) {
+    if (!window.confirm('Opravdu smazat tento záznam?')) return;
+    await api.deleteAttendance(id);
+    load();
+  }
+
   function exportXlsx() {
     const data = rows.map((r) => ({
       'Datum a čas': fmtDateTime(r.called_at),
       'Zaměstnanec': r.employee,
       'Osobní číslo': r.pin_code,
-      'Událost': r.event_type === 'check_out' ? 'Odhlášení' : 'Přihlášení',
+      'Hodiny': r.hours,
       'Objekt': r.site || '',
       'Telefon volajícího': r.caller_number || '',
     }));
@@ -73,23 +96,48 @@ export default function History() {
             <thead>
               <tr>
                 <th>Datum a čas</th><th>Zaměstnanec</th><th>Os. číslo</th>
-                <th>Událost</th><th>Objekt</th><th>Telefon</th>
+                <th>Hodiny</th><th>Objekt</th><th>Telefon</th><th></th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id}>
-                  <td>{fmtDateTime(r.called_at)}</td>
-                  <td>{r.employee}</td>
-                  <td>{r.pin_code}</td>
-                  <td>
-                    <span className={`badge ${r.event_type === 'check_out' ? 'out' : 'in'}`}>
-                      {r.event_type === 'check_out' ? 'Odhlášení' : 'Přihlášení'}
-                    </span>
-                  </td>
-                  <td>{r.site || '—'}</td>
-                  <td>{r.caller_number || '—'}</td>
-                </tr>
+                editId === r.id ? (
+                  <tr key={r.id}>
+                    <td>{fmtDateTime(r.called_at)}</td>
+                    <td>{r.employee}</td>
+                    <td>{r.pin_code}</td>
+                    <td>
+                      <input type="number" min="0" step="0.5" style={{ width: 70 }}
+                        value={editVals.hours}
+                        onChange={(e) => setEditVals({ ...editVals, hours: e.target.value })} />
+                    </td>
+                    <td>
+                      <select value={editVals.site_id}
+                        onChange={(e) => setEditVals({ ...editVals, site_id: e.target.value })}>
+                        <option value="">—</option>
+                        {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </td>
+                    <td>{r.caller_number || '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <button className="btn-primary" onClick={() => saveEdit(r.id)}>Uložit</button>
+                      <button className="btn-ghost" onClick={cancelEdit}>Zrušit</button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={r.id}>
+                    <td>{fmtDateTime(r.called_at)}</td>
+                    <td>{r.employee}</td>
+                    <td>{r.pin_code}</td>
+                    <td>{r.hours} h</td>
+                    <td>{r.site || '—'}</td>
+                    <td>{r.caller_number || '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <button className="btn-ghost" onClick={() => startEdit(r)}>Upravit</button>
+                      <button className="btn-ghost" onClick={() => remove(r.id)}>Smazat</button>
+                    </td>
+                  </tr>
+                )
               ))}
             </tbody>
           </table>

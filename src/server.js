@@ -72,24 +72,38 @@ app.post('/voice/code', validateTwilio, async (req, res) => {
       twiml.redirect({ method: 'POST' }, `/voice?attempt=${attempt + 1}`);
     } else {
       const emp = rows[0];
-      const siteRes = await pool.query('SELECT id, name FROM sites WHERE phone_number = $1', [
-        calledNumber,
-      ]);
+
+      // Objekt se určí podle ČÍSLA, ZE KTERÉHO SE VOLÁ (telefon patří objektu).
+      const siteRes = await pool.query(
+        `SELECT s.id, s.name
+           FROM site_phones sp
+           JOIN sites s ON s.id = sp.site_id
+          WHERE sp.phone_number = $1`,
+        [callerNumber]
+      );
       const site = siteRes.rows[0] || null;
 
-      // Ověřování čísla volajícího je vypnuté – telefon se mezi zaměstnanci sdílí,
-      // jedinou pojistkou je osobní kód. Číslo, ze kterého se volalo, se i tak ukládá pro evidenci.
+      if (!site) {
+        // Číslo není přiřazené k žádnému objektu → hlášení se odmítne.
+        twiml.say(
+          SAY,
+          'Toto telefonní číslo není přiřazeno k žádnému objektu. Kontaktujte prosím dispečink. Na slyšenou.'
+        );
+        twiml.hangup();
+        return res.type('text/xml').send(twiml.toString());
+      }
+
+      // Ověřování konkrétní osoby zajišťuje osobní kód; číslo se ukládá pro evidenci.
       await pool.query(
         `INSERT INTO attendance_logs
-           (employee_id, site_id, event_type, caller_number, caller_verified, call_sid)
-         VALUES ($1, $2, 'check_in', $3, TRUE, $4)`,
-        [emp.id, site ? site.id : null, callerNumber, callSid]
+           (employee_id, site_id, event_type, caller_number, caller_verified, call_sid, hours)
+         VALUES ($1, $2, 'check_in', $3, TRUE, $4, $5)`,
+        [emp.id, site.id, callerNumber, callSid, SHIFT_HOURS]
       );
 
-      const where = site ? ` na objektu ${site.name}` : '';
       twiml.say(
         SAY,
-        `Děkujeme, ${emp.name}. Byli jste přihlášeni do služby${where}. Na slyšenou.`
+        `Děkujeme, ${emp.name}. Byli jste přihlášeni do služby na objektu ${site.name}. Na slyšenou.`
       );
       twiml.hangup();
     }
@@ -141,8 +155,8 @@ app.get('/api/attendance', requireAuth, async (req, res) => {
   if (employee_id) { params.push(employee_id); where.push(`l.employee_id = $${params.length}`); }
 
   const { rows } = await pool.query(
-    `SELECT l.id, e.name AS employee, e.pin_code, s.name AS site, l.event_type,
-            l.called_at, l.caller_number, l.caller_verified
+    `SELECT l.id, e.name AS employee, e.pin_code, s.name AS site, l.site_id, l.event_type,
+            l.called_at, l.caller_number, l.hours
        FROM attendance_logs l
        JOIN employees e ON e.id = l.employee_id
   LEFT JOIN sites s     ON s.id = l.site_id
@@ -152,6 +166,23 @@ app.get('/api/attendance', requireAuth, async (req, res) => {
     params
   );
   res.json(rows);
+});
+
+// Úprava záznamu docházky – počet hodin a případně objekt
+app.put('/api/attendance/:id', requireAuth, async (req, res) => {
+  const { hours, site_id } = req.body;
+  const { rows } = await pool.query(
+    'UPDATE attendance_logs SET hours = $1, site_id = $2 WHERE id = $3 RETURNING id',
+    [hours, site_id || null, req.params.id]
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'Záznam nenalezen' });
+  res.json({ ok: true });
+});
+
+// Smazání záznamu docházky (pro opravu chyb)
+app.delete('/api/attendance/:id', requireAuth, async (req, res) => {
+  await pool.query('DELETE FROM attendance_logs WHERE id = $1', [req.params.id]);
+  res.json({ ok: true });
 });
 
 // --- Zaměstnanci ---
@@ -182,16 +213,54 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
 
 // --- Objekty ---
 app.get('/api/sites', requireAuth, async (_req, res) => {
-  const { rows } = await pool.query('SELECT * FROM sites ORDER BY name');
+  const { rows } = await pool.query(`
+    SELECT s.id, s.name, s.address,
+           COALESCE(
+             json_agg(json_build_object('id', sp.id, 'phone_number', sp.phone_number)
+                      ORDER BY sp.phone_number)
+             FILTER (WHERE sp.id IS NOT NULL), '[]'
+           ) AS phones
+      FROM sites s
+ LEFT JOIN site_phones sp ON sp.site_id = s.id
+  GROUP BY s.id
+  ORDER BY s.name
+  `);
   res.json(rows);
 });
 app.post('/api/sites', requireAuth, async (req, res) => {
-  const { name, address, phone_number } = req.body;
+  const { name, address } = req.body;
   const { rows } = await pool.query(
-    'INSERT INTO sites (name, address, phone_number) VALUES ($1,$2,$3) RETURNING *',
-    [name, address || null, phone_number || null]
+    'INSERT INTO sites (name, address) VALUES ($1,$2) RETURNING *',
+    [name, address || null]
   );
   res.json(rows[0]);
+});
+app.delete('/api/sites/:id', requireAuth, async (req, res) => {
+  await pool.query('DELETE FROM sites WHERE id = $1', [req.params.id]);
+  res.json({ ok: true });
+});
+
+// Přiřazení telefonního čísla k objektu
+app.post('/api/sites/:id/phones', requireAuth, async (req, res) => {
+  const { phone_number } = req.body;
+  if (!phone_number) return res.status(400).json({ error: 'Zadejte číslo' });
+  try {
+    const { rows } = await pool.query(
+      'INSERT INTO site_phones (site_id, phone_number) VALUES ($1,$2) RETURNING *',
+      [req.params.id, phone_number.trim()]
+    );
+    res.json(rows[0]);
+  } catch (e) {
+    res.status(400).json({
+      error: e.message.includes('unique')
+        ? 'Toto číslo už je přiřazeno k některému objektu'
+        : e.message,
+    });
+  }
+});
+app.delete('/api/sites/:id/phones/:phoneId', requireAuth, async (req, res) => {
+  await pool.query('DELETE FROM site_phones WHERE id = $1', [req.params.phoneId]);
+  res.json({ ok: true });
 });
 
 // --- Směny (pro hlídání nenahlášení) ---

@@ -5,8 +5,10 @@ export default function Employees() {
   const [employees, setEmployees] = useState([]);
   const [sites, setSites] = useState([]);
   const [emp, setEmp] = useState({ name: '', phone: '', pin_code: '' });
-  const [site, setSite] = useState({ name: '', address: '', phone_number: '' });
+  const [site, setSite] = useState({ name: '', address: '' });
   const [err, setErr] = useState('');
+  const [phoneInputs, setPhoneInputs] = useState({}); // {siteId: "rozepsané číslo"}
+  const [phoneErr, setPhoneErr] = useState('');
 
   // Stav inline úpravy: id právě upravovaného zaměstnance + rozpracované hodnoty
   const [editId, setEditId] = useState(null);
@@ -55,7 +57,26 @@ export default function Employees() {
   async function addSite() {
     if (!site.name) return;
     await api.addSite(site);
-    setSite({ name: '', address: '', phone_number: '' });
+    setSite({ name: '', address: '' });
+    loadSites();
+  }
+  async function deleteSite(id) {
+    if (!window.confirm('Smazat objekt včetně jeho čísel?')) return;
+    await api.deleteSite(id);
+    loadSites();
+  }
+  async function addPhone(siteId) {
+    setPhoneErr('');
+    const num = (phoneInputs[siteId] || '').trim();
+    if (!num) return;
+    try {
+      await api.addSitePhone(siteId, num);
+      setPhoneInputs({ ...phoneInputs, [siteId]: '' });
+      loadSites();
+    } catch (e) { setPhoneErr(e.message); }
+  }
+  async function removePhone(siteId, phoneId) {
+    await api.deleteSitePhone(siteId, phoneId);
     loadSites();
   }
 
@@ -129,24 +150,50 @@ export default function Employees() {
 
       <div className="card">
         <h3 style={{ marginTop: 0, color: 'var(--navy)' }}>Objekty</h3>
+        <p style={{ color: 'var(--muted)', marginTop: 0 }}>
+          Ke každému objektu přiřaďte telefonní čísla, ze kterých se na něm hlásí.
+          Číslo, ze kterého zaměstnanec volá, určí, na kterém objektu je. Z nepřiřazeného čísla se hlásit nelze.
+        </p>
         <div className="row-form" style={{ marginBottom: 16 }}>
           <div className="f"><label>Název</label>
             <input value={site.name} onChange={(e) => setSite({ ...site, name: e.target.value })} /></div>
           <div className="f"><label>Adresa</label>
             <input value={site.address} onChange={(e) => setSite({ ...site, address: e.target.value })} /></div>
-          <div className="f"><label>Tel. číslo linky (volitelné)</label>
-            <input value={site.phone_number} placeholder="+420…" onChange={(e) => setSite({ ...site, phone_number: e.target.value })} /></div>
           <button className="btn-primary" onClick={addSite}>Přidat objekt</button>
         </div>
-        <table>
-          <thead><tr><th>Název</th><th>Adresa</th><th>Tel. linka</th></tr></thead>
-          <tbody>
-            {sites.map((s) => (
-              <tr key={s.id}><td>{s.name}</td><td>{s.address || '—'}</td><td>{s.phone_number || '—'}</td></tr>
-            ))}
-            {sites.length === 0 && <tr><td colSpan="3" className="empty">Zatím žádné objekty.</td></tr>}
-          </tbody>
-        </table>
+        {phoneErr && <div className="err">{phoneErr}</div>}
+
+        {sites.length === 0 && <div className="empty">Zatím žádné objekty.</div>}
+        {sites.map((s) => (
+          <div key={s.id} style={{ borderTop: '1px solid var(--line)', padding: '12px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <div>
+                <strong>{s.name}</strong>
+                {s.address && <span style={{ color: 'var(--muted)' }}> · {s.address}</span>}
+              </div>
+              <button className="btn-ghost" onClick={() => deleteSite(s.id)}>Smazat objekt</button>
+            </div>
+            <div style={{ margin: '8px 0', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {(s.phones || []).length === 0 && (
+                <span style={{ color: 'var(--muted)', fontSize: 13 }}>Žádná čísla – zatím se na tento objekt nelze hlásit.</span>
+              )}
+              {(s.phones || []).map((p) => (
+                <span key={p.id} className="badge ok" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {p.phone_number}
+                  <span style={{ cursor: 'pointer', fontWeight: 700 }}
+                    onClick={() => removePhone(s.id, p.id)}>×</span>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input placeholder="+420…" style={{ width: 180 }}
+                value={phoneInputs[s.id] || ''}
+                onChange={(e) => setPhoneInputs({ ...phoneInputs, [s.id]: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && addPhone(s.id)} />
+              <button className="btn-ghost" onClick={() => addPhone(s.id)}>Přidat číslo</button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
