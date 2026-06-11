@@ -1,0 +1,22 @@
+{
+  "name": "dochazka-crm",
+  "version": "1.0.0",
+  "description": "Docházkové CRM pro ostrahu objektů – telefonní hlášení přes Twilio + webový přehled",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "build": "npm --prefix client install && npm --prefix client run build",
+    "dev": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.13.1",
+    "twilio": "^5.3.5",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.9.16",
+    "cookie-parser": "^1.4.7"
+  }
+}
