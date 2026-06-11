@@ -63,7 +63,7 @@ app.post('/voice/code', validateTwilio, async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      'SELECT id, name, phone FROM employees WHERE pin_code = $1 AND active = TRUE',
+      'SELECT id, name, phone, shift_hours FROM employees WHERE pin_code = $1 AND active = TRUE',
       [digits]
     );
 
@@ -94,11 +94,13 @@ app.post('/voice/code', validateTwilio, async (req, res) => {
       }
 
       // Ověřování konkrétní osoby zajišťuje osobní kód; číslo se ukládá pro evidenci.
+      // Hodiny záznamu = délka směny daného zaměstnance (zachytí se v okamžiku přihlášení).
+      const shiftHours = emp.shift_hours || SHIFT_HOURS;
       await pool.query(
         `INSERT INTO attendance_logs
            (employee_id, site_id, event_type, caller_number, caller_verified, call_sid, hours)
          VALUES ($1, $2, 'check_in', $3, TRUE, $4, $5)`,
-        [emp.id, site.id, callerNumber, callSid, SHIFT_HOURS]
+        [emp.id, site.id, callerNumber, callSid, shiftHours]
       );
 
       twiml.say(
@@ -123,24 +125,22 @@ app.post('/api/login', (req, res) => {
   res.json({ token });
 });
 
-// Kdo je právě přihlášený ve službě = poslední přihlášení není starší než SHIFT_HOURS hodin.
-// Po uplynutí této doby zaměstnanec z přehledu automaticky zmizí (žádné rušení záznamů není potřeba).
+// Kdo je právě přihlášený ve službě = poslední přihlášení + délka směny daného záznamu
+// (hodiny zaměstnance) ještě neuplynulo. Po uplynutí z přehledu automaticky zmizí.
 app.get('/api/on-site', requireAuth, async (_req, res) => {
-  const { rows } = await pool.query(
-    `
+  const { rows } = await pool.query(`
     SELECT DISTINCT ON (l.employee_id)
            e.name AS employee, e.pin_code, s.name AS site,
            l.called_at AS since,
-           l.called_at + ($1 || ' hours')::interval AS until
+           l.called_at + (l.hours || ' hours')::interval AS until,
+           l.hours
       FROM attendance_logs l
       JOIN employees e ON e.id = l.employee_id
  LEFT JOIN sites s     ON s.id = l.site_id
      WHERE l.event_type = 'check_in'
-       AND l.called_at >= now() - ($1 || ' hours')::interval
+       AND l.called_at + (l.hours || ' hours')::interval > now()
      ORDER BY l.employee_id, l.called_at DESC
-  `,
-    [SHIFT_HOURS]
-  );
+  `);
   res.json(rows);
 });
 
@@ -192,10 +192,11 @@ app.get('/api/employees', requireAuth, async (_req, res) => {
 });
 app.post('/api/employees', requireAuth, async (req, res) => {
   const { name, phone, pin_code } = req.body;
+  const shift = Math.min(12, Math.max(1, parseInt(req.body.shift_hours, 10) || 12));
   try {
     const { rows } = await pool.query(
-      'INSERT INTO employees (name, phone, pin_code) VALUES ($1,$2,$3) RETURNING *',
-      [name, phone || null, pin_code]
+      'INSERT INTO employees (name, phone, pin_code, shift_hours) VALUES ($1,$2,$3,$4) RETURNING *',
+      [name, phone || null, pin_code, shift]
     );
     res.json(rows[0]);
   } catch (e) {
@@ -204,9 +205,10 @@ app.post('/api/employees', requireAuth, async (req, res) => {
 });
 app.put('/api/employees/:id', requireAuth, async (req, res) => {
   const { name, phone, pin_code, active } = req.body;
+  const shift = Math.min(12, Math.max(1, parseInt(req.body.shift_hours, 10) || 12));
   const { rows } = await pool.query(
-    'UPDATE employees SET name=$1, phone=$2, pin_code=$3, active=$4 WHERE id=$5 RETURNING *',
-    [name, phone || null, pin_code, active, req.params.id]
+    'UPDATE employees SET name=$1, phone=$2, pin_code=$3, active=$4, shift_hours=$5 WHERE id=$6 RETURNING *',
+    [name, phone || null, pin_code, active, shift, req.params.id]
   );
   res.json(rows[0]);
 });

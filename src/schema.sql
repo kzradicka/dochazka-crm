@@ -55,3 +55,6 @@ CREATE INDEX IF NOT EXISTS idx_site_phones_number ON site_phones (phone_number);
 
 -- Počet hodin u záznamu docházky (pro mzdy). Výchozí 12, lze ručně upravit.
 ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS hours NUMERIC NOT NULL DEFAULT 12;
+
+-- Délka směny zaměstnance v hodinách (1–12). Určuje výchozí hodiny záznamu i automatické odhlášení.
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_hours INTEGER NOT NULL DEFAULT 12;

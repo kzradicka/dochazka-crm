@@ -4,7 +4,7 @@ import { api } from '../api.js';
 export default function Employees() {
   const [employees, setEmployees] = useState([]);
   const [sites, setSites] = useState([]);
-  const [emp, setEmp] = useState({ name: '', phone: '', pin_code: '' });
+  const [emp, setEmp] = useState({ name: '', phone: '', pin_code: '', shift_hours: 12 });
   const [site, setSite] = useState({ name: '', address: '' });
   const [err, setErr] = useState('');
   const [phoneInputs, setPhoneInputs] = useState({}); // {siteId: "rozepsané číslo"}
@@ -12,7 +12,7 @@ export default function Employees() {
 
   // Stav inline úpravy: id právě upravovaného zaměstnance + rozpracované hodnoty
   const [editId, setEditId] = useState(null);
-  const [editVals, setEditVals] = useState({ name: '', phone: '', pin_code: '' });
+  const [editVals, setEditVals] = useState({ name: '', phone: '', pin_code: '', shift_hours: 12 });
   const [editErr, setEditErr] = useState('');
 
   const loadEmp = () => api.employees().then(setEmployees).catch(() => {});
@@ -25,7 +25,7 @@ export default function Employees() {
     if (!emp.name || !emp.pin_code) { setErr('Vyplňte jméno a osobní číslo.'); return; }
     try {
       await api.addEmployee(emp);
-      setEmp({ name: '', phone: '', pin_code: '' });
+      setEmp({ name: '', phone: '', pin_code: '', shift_hours: 12 });
       loadEmp();
     } catch (e) { setErr(e.message); }
   }
@@ -33,7 +33,7 @@ export default function Employees() {
   function startEdit(e) {
     setEditErr('');
     setEditId(e.id);
-    setEditVals({ name: e.name, phone: e.phone || '', pin_code: e.pin_code });
+    setEditVals({ name: e.name, phone: e.phone || '', pin_code: e.pin_code, shift_hours: e.shift_hours || 12 });
   }
   function cancelEdit() { setEditId(null); setEditErr(''); }
 
@@ -49,7 +49,7 @@ export default function Employees() {
 
   async function toggleActive(e) {
     await api.updateEmployee(e.id, {
-      name: e.name, phone: e.phone, pin_code: e.pin_code, active: !e.active,
+      name: e.name, phone: e.phone, pin_code: e.pin_code, shift_hours: e.shift_hours, active: !e.active,
     });
     loadEmp();
   }
@@ -94,6 +94,9 @@ export default function Employees() {
             <input value={emp.phone} placeholder="+420…" onChange={(e) => setEmp({ ...emp, phone: e.target.value })} /></div>
           <div className="f"><label>Osobní číslo (PIN)</label>
             <input value={emp.pin_code} onChange={(e) => setEmp({ ...emp, pin_code: e.target.value })} /></div>
+          <div className="f"><label>Směna (hod)</label>
+            <input type="number" min="1" max="12" style={{ width: 90 }} value={emp.shift_hours}
+              onChange={(e) => setEmp({ ...emp, shift_hours: e.target.value })} /></div>
           <button className="btn-primary" onClick={addEmployee}>Přidat</button>
         </div>
       </div>
@@ -102,7 +105,7 @@ export default function Employees() {
         {editErr && <div className="err">{editErr}</div>}
         <table>
           <thead>
-            <tr><th>Jméno</th><th>Os. číslo</th><th>Telefon</th><th>Stav</th><th></th></tr>
+            <tr><th>Jméno</th><th>Os. číslo</th><th>Telefon</th><th>Směna</th><th>Stav</th><th></th></tr>
           </thead>
           <tbody>
             {employees.map((e) => (
@@ -114,6 +117,8 @@ export default function Employees() {
                     onChange={(ev) => setEditVals({ ...editVals, pin_code: ev.target.value })} /></td>
                   <td><input value={editVals.phone} placeholder="+420…"
                     onChange={(ev) => setEditVals({ ...editVals, phone: ev.target.value })} /></td>
+                  <td><input type="number" min="1" max="12" style={{ width: 70 }} value={editVals.shift_hours}
+                    onChange={(ev) => setEditVals({ ...editVals, shift_hours: ev.target.value })} /></td>
                   <td>
                     <span className={`badge ${e.active ? 'ok' : 'warn'}`}>
                       {e.active ? 'Aktivní' : 'Neaktivní'}
@@ -129,6 +134,7 @@ export default function Employees() {
                   <td>{e.name}</td>
                   <td>{e.pin_code}</td>
                   <td>{e.phone || '—'}</td>
+                  <td>{e.shift_hours} h</td>
                   <td>
                     <span className={`badge ${e.active ? 'ok' : 'warn'}`}>
                       {e.active ? 'Aktivní' : 'Neaktivní'}
@@ -143,7 +149,7 @@ export default function Employees() {
                 </tr>
               )
             ))}
-            {employees.length === 0 && <tr><td colSpan="5" className="empty">Zatím žádní zaměstnanci.</td></tr>}
+            {employees.length === 0 && <tr><td colSpan="6" className="empty">Zatím žádní zaměstnanci.</td></tr>}
           </tbody>
         </table>
       </div>
