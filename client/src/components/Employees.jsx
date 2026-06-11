@@ -8,6 +8,11 @@ export default function Employees() {
   const [site, setSite] = useState({ name: '', address: '', phone_number: '' });
   const [err, setErr] = useState('');
 
+  // Stav inline úpravy: id právě upravovaného zaměstnance + rozpracované hodnoty
+  const [editId, setEditId] = useState(null);
+  const [editVals, setEditVals] = useState({ name: '', phone: '', pin_code: '' });
+  const [editErr, setEditErr] = useState('');
+
   const loadEmp = () => api.employees().then(setEmployees).catch(() => {});
   const loadSites = () => api.sites().then(setSites).catch(() => {});
 
@@ -23,8 +28,27 @@ export default function Employees() {
     } catch (e) { setErr(e.message); }
   }
 
+  function startEdit(e) {
+    setEditErr('');
+    setEditId(e.id);
+    setEditVals({ name: e.name, phone: e.phone || '', pin_code: e.pin_code });
+  }
+  function cancelEdit() { setEditId(null); setEditErr(''); }
+
+  async function saveEdit(e) {
+    setEditErr('');
+    if (!editVals.name || !editVals.pin_code) { setEditErr('Jméno a osobní číslo nesmí být prázdné.'); return; }
+    try {
+      await api.updateEmployee(e.id, { ...editVals, active: e.active });
+      setEditId(null);
+      loadEmp();
+    } catch (err) { setEditErr(err.message); }
+  }
+
   async function toggleActive(e) {
-    await api.updateEmployee(e.id, { ...e, active: !e.active });
+    await api.updateEmployee(e.id, {
+      name: e.name, phone: e.phone, pin_code: e.pin_code, active: !e.active,
+    });
     loadEmp();
   }
 
@@ -45,7 +69,7 @@ export default function Employees() {
         <div className="row-form">
           <div className="f"><label>Jméno</label>
             <input value={emp.name} onChange={(e) => setEmp({ ...emp, name: e.target.value })} /></div>
-          <div className="f"><label>Telefon (pro ověření)</label>
+          <div className="f"><label>Telefon (volitelné)</label>
             <input value={emp.phone} placeholder="+420…" onChange={(e) => setEmp({ ...emp, phone: e.target.value })} /></div>
           <div className="f"><label>Osobní číslo (PIN)</label>
             <input value={emp.pin_code} onChange={(e) => setEmp({ ...emp, pin_code: e.target.value })} /></div>
@@ -54,27 +78,49 @@ export default function Employees() {
       </div>
 
       <div className="card">
+        {editErr && <div className="err">{editErr}</div>}
         <table>
           <thead>
             <tr><th>Jméno</th><th>Os. číslo</th><th>Telefon</th><th>Stav</th><th></th></tr>
           </thead>
           <tbody>
             {employees.map((e) => (
-              <tr key={e.id}>
-                <td>{e.name}</td>
-                <td>{e.pin_code}</td>
-                <td>{e.phone || '—'}</td>
-                <td>
-                  <span className={`badge ${e.active ? 'ok' : 'warn'}`}>
-                    {e.active ? 'Aktivní' : 'Neaktivní'}
-                  </span>
-                </td>
-                <td>
-                  <button className="btn-ghost" onClick={() => toggleActive(e)}>
-                    {e.active ? 'Deaktivovat' : 'Aktivovat'}
-                  </button>
-                </td>
-              </tr>
+              editId === e.id ? (
+                <tr key={e.id}>
+                  <td><input value={editVals.name}
+                    onChange={(ev) => setEditVals({ ...editVals, name: ev.target.value })} /></td>
+                  <td><input value={editVals.pin_code} style={{ width: 90 }}
+                    onChange={(ev) => setEditVals({ ...editVals, pin_code: ev.target.value })} /></td>
+                  <td><input value={editVals.phone} placeholder="+420…"
+                    onChange={(ev) => setEditVals({ ...editVals, phone: ev.target.value })} /></td>
+                  <td>
+                    <span className={`badge ${e.active ? 'ok' : 'warn'}`}>
+                      {e.active ? 'Aktivní' : 'Neaktivní'}
+                    </span>
+                  </td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn-primary" onClick={() => saveEdit(e)}>Uložit</button>
+                    <button className="btn-ghost" onClick={cancelEdit}>Zrušit</button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={e.id}>
+                  <td>{e.name}</td>
+                  <td>{e.pin_code}</td>
+                  <td>{e.phone || '—'}</td>
+                  <td>
+                    <span className={`badge ${e.active ? 'ok' : 'warn'}`}>
+                      {e.active ? 'Aktivní' : 'Neaktivní'}
+                    </span>
+                  </td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn-ghost" onClick={() => startEdit(e)}>Upravit</button>
+                    <button className="btn-ghost" onClick={() => toggleActive(e)}>
+                      {e.active ? 'Deaktivovat' : 'Aktivovat'}
+                    </button>
+                  </td>
+                </tr>
+              )
             ))}
             {employees.length === 0 && <tr><td colSpan="5" className="empty">Zatím žádní zaměstnanci.</td></tr>}
           </tbody>

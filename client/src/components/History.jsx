@@ -30,7 +30,6 @@ export default function History() {
       'Událost': r.event_type === 'check_out' ? 'Odhlášení' : 'Přihlášení',
       'Objekt': r.site || '',
       'Telefon volajícího': r.caller_number || '',
-      'Číslo ověřeno': r.caller_verified ? 'Ano' : 'Ne',
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -74,7 +73,7 @@ export default function History() {
             <thead>
               <tr>
                 <th>Datum a čas</th><th>Zaměstnanec</th><th>Os. číslo</th>
-                <th>Událost</th><th>Objekt</th><th>Telefon</th><th>Ověřeno</th>
+                <th>Událost</th><th>Objekt</th><th>Telefon</th>
               </tr>
             </thead>
             <tbody>
@@ -90,11 +89,6 @@ export default function History() {
                   </td>
                   <td>{r.site || '—'}</td>
                   <td>{r.caller_number || '—'}</td>
-                  <td>
-                    <span className={`badge ${r.caller_verified ? 'ok' : 'warn'}`}>
-                      {r.caller_verified ? 'Ano' : 'K ověření'}
-                    </span>
-                  </td>
                 </tr>
               ))}
             </tbody>

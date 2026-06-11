@@ -76,13 +76,14 @@ app.post('/voice/code', validateTwilio, async (req, res) => {
         calledNumber,
       ]);
       const site = siteRes.rows[0] || null;
-      const callerVerified = !!(emp.phone && emp.phone === callerNumber);
 
+      // Ověřování čísla volajícího je vypnuté – telefon se mezi zaměstnanci sdílí,
+      // jedinou pojistkou je osobní kód. Číslo, ze kterého se volalo, se i tak ukládá pro evidenci.
       await pool.query(
         `INSERT INTO attendance_logs
            (employee_id, site_id, event_type, caller_number, caller_verified, call_sid)
-         VALUES ($1, $2, 'check_in', $3, $4, $5)`,
-        [emp.id, site ? site.id : null, callerNumber, callerVerified, callSid]
+         VALUES ($1, $2, 'check_in', $3, TRUE, $4)`,
+        [emp.id, site ? site.id : null, callerNumber, callSid]
       );
 
       const where = site ? ` na objektu ${site.name}` : '';
