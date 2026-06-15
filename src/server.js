@@ -5,7 +5,7 @@ import { dirname, join } from 'path';
 import { existsSync } from 'fs';
 
 import pool, { migrate } from './db.js';
-import { login, requireAuth } from './auth.js';
+import { login, totpEnabled, requireAuth } from './auth.js';
 import { startShiftWatcher } from './notifications.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -34,7 +34,7 @@ app.post('/voice', validateTwilio, (req, res) => {
   const twiml = new VoiceResponse();
 
   if (attempt > MAX_ATTEMPTS) {
-    twiml.say(SAY, 'Překročen počet pokusů. Kontaktujte prosím dispečink. Na slyšenou.');
+    twiml.say(SAY, 'Nebyl potvrzen příchod, zavolejte na vedení B plus H. Na slyšenou.');
     twiml.hangup();
   } else {
     const gather = twiml.gather({
@@ -44,7 +44,7 @@ app.post('/voice', validateTwilio, (req, res) => {
       action: `/voice/code?attempt=${attempt}`,
       method: 'POST',
     });
-    gather.say(SAY, 'Dobrý den. Zadejte prosím své osobní číslo a potvrďte křížkem.');
+    gather.say(SAY, 'Dobrý den, docházkový systém B plus H. Zadejte své osobní číslo a potvrďte křížkem.');
     twiml.redirect({ method: 'POST' }, `/voice?attempt=${attempt + 1}`);
   }
   res.type('text/xml').send(twiml.toString());
@@ -120,10 +120,13 @@ app.post('/voice/code', validateTwilio, async (req, res) => {
 /* =====================  REST API PRO CRM  ===================== */
 
 app.post('/api/login', (req, res) => {
-  const token = login(req.body.password);
-  if (!token) return res.status(401).json({ error: 'Nesprávné heslo' });
-  res.json({ token });
+  const result = login(req.body.password, req.body.code);
+  if (result.error) return res.status(401).json({ error: result.error, needCode: result.needCode });
+  res.json({ token: result.token });
 });
+
+// Veřejná informace pro přihlašovací stránku – zda je zapnuté dvoufaktorové ověření.
+app.get('/api/auth-info', (_req, res) => res.json({ totp: totpEnabled() }));
 
 // Kdo je právě přihlášený ve službě = poslední přihlášení + délka směny daného záznamu
 // (hodiny zaměstnance) ještě neuplynulo. Po uplynutí z přehledu automaticky zmizí.
