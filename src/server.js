@@ -105,7 +105,7 @@ app.post('/voice/code', validateTwilio, async (req, res) => {
 
       twiml.say(
         SAY,
-        `Děkujeme, ${emp.name}. Byli jste přihlášeni do služby na objektu ${site.name}. Na slyšenou.`
+        `Děkujeme, ${emp.name}. Byli jste přihlášeni do služby na objektu ${site.name}. Přejeme klidnou směnu, na slyšenou.`
       );
       twiml.hangup();
     }
