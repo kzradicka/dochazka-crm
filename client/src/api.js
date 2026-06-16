@@ -25,7 +25,8 @@ async function req(method, path, body) {
 }
 
 export const api = {
-  login: (password) => req('POST', '/api/login', { password }),
+  login: (password, code) => req('POST', '/api/login', { password, code }),
+  authInfo: () => req('GET', '/api/auth-info'),
   onSite: () => req('GET', '/api/on-site'),
   attendance: (q) => req('GET', '/api/attendance?' + new URLSearchParams(q)),
   updateAttendance: (id, d) => req('PUT', `/api/attendance/${id}`, d),
