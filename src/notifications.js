@@ -7,6 +7,11 @@ if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
   twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 }
 
+// Časy eskalace (v minutách od očekávaného příchodu):
+// 1. SMS na čísla pobočky po 10 min, 2. SMS na kontaktní čísla po 15 min.
+const FIRST_ALERT_MIN = 10;
+const SECOND_ALERT_MIN = 15;
+
 // Odešle SMS. Když není Twilio nastavené, jen zaloguje (aby šlo testovat bez SMS).
 async function sendSms(to, body) {
   if (!twilioClient || !process.env.TWILIO_NUMBER) {
@@ -82,7 +87,7 @@ async function checkSiteSchedules() {
     const elapsed = minutesOfDay - expectedMin;
 
     // Ještě nenastal čas první eskalace, nebo už je příliš pozdě (vyhneme se hlášení ze starých časů).
-    if (elapsed < sc.first_alert_min) continue;
+    if (elapsed < FIRST_ALERT_MIN) continue;
     if (elapsed > 240) continue;
 
     // Nahlásil se na pobočce dnes někdo v okně [očekávaný čas − 60 min, teď]?
@@ -98,7 +103,7 @@ async function checkSiteSchedules() {
     if (chk.length > 0) continue; // někdo se nahlásil → žádné upozornění
 
     // 1. eskalace (+15 min): SMS na čísla pobočky
-    if (elapsed >= sc.first_alert_min && !(await alertAlreadySent(sc.id, dateISO, 1))) {
+    if (elapsed >= FIRST_ALERT_MIN && !(await alertAlreadySent(sc.id, dateISO, 1))) {
       const { rows: phones } = await pool.query(
         'SELECT phone_number FROM site_phones WHERE site_id = $1',
         [sc.site_id]
@@ -110,7 +115,7 @@ async function checkSiteSchedules() {
     }
 
     // 2. eskalace (+30 min): SMS na kontaktní čísla
-    if (elapsed >= sc.second_alert_min && !(await alertAlreadySent(sc.id, dateISO, 2))) {
+    if (elapsed >= SECOND_ALERT_MIN && !(await alertAlreadySent(sc.id, dateISO, 2))) {
       const { rows: contacts } = await pool.query(
         'SELECT phone_number FROM site_contacts WHERE site_id = $1',
         [sc.site_id]

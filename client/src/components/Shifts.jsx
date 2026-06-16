@@ -87,8 +87,8 @@ export default function Shifts() {
       <div className="card">
         <p style={{ marginTop: 0, color: 'var(--muted)' }}>
           U každé pobočky nastavte očekávané časy příchodu a dny, kdy platí. Pokud se na pobočce
-          nikdo nenahlásí osobním kódem, systém po <strong>15 minutách</strong> pošle SMS na čísla
-          pobočky a po <strong>30 minutách</strong> SMS na kontaktní čísla.
+          nikdo nenahlásí osobním kódem, systém po <strong>10 minutách</strong> pošle SMS na čísla
+          pobočky a po <strong>15 minutách</strong> SMS na kontaktní čísla.
         </p>
         {err && <div className="err">{err}</div>}
         <div className="row-form">
@@ -143,10 +143,10 @@ export default function Shifts() {
             </div>
           </div>
 
-          {/* Čísla pobočky – 1. SMS (+15 min) */}
+          {/* Čísla pobočky – 1. SMS (+10 min) */}
           <div style={{ marginTop: 16 }}>
             <strong>Telefon pobočky</strong>{' '}
-            <span style={{ color: 'var(--muted)', fontSize: 13 }}>(SMS po 15 min; čísla se spravují v záložce „Zaměstnanci a objekty")</span>
+            <span style={{ color: 'var(--muted)', fontSize: 13 }}>(SMS po 10 min; čísla se spravují v záložce „Zaměstnanci a objekty")</span>
             <div style={{ margin: '8px 0', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {(s.phones || []).length === 0 && (
                 <span style={{ color: 'var(--muted)', fontSize: 13 }}>Žádná čísla pobočky.</span>
@@ -157,10 +157,10 @@ export default function Shifts() {
             </div>
           </div>
 
-          {/* Kontaktní čísla – 2. SMS (+30 min) */}
+          {/* Kontaktní čísla – 2. SMS (+15 min) */}
           <div style={{ marginTop: 12 }}>
             <strong>Kontaktní čísla pro eskalaci</strong>{' '}
-            <span style={{ color: 'var(--muted)', fontSize: 13 }}>(SMS po 30 min)</span>
+            <span style={{ color: 'var(--muted)', fontSize: 13 }}>(SMS po 15 min)</span>
             <div style={{ margin: '8px 0', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {(s.contacts || []).length === 0 && (
                 <span style={{ color: 'var(--muted)', fontSize: 13 }}>Žádná kontaktní čísla.</span>
@@ -198,7 +198,7 @@ export default function Shifts() {
                 <td>{a.expected_time}</td>
                 <td>
                   <span className={`badge ${a.level === 2 ? 'warn' : 'ok'}`}>
-                    {a.level === 2 ? 'SMS kontakty (+30 min)' : 'SMS pobočka (+15 min)'}
+                    {a.level === 2 ? 'SMS kontakty (+15 min)' : 'SMS pobočka (+10 min)'}
                   </span>
                 </td>
               </tr>
