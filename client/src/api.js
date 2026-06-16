@@ -25,8 +25,7 @@ async function req(method, path, body) {
 }
 
 export const api = {
-  login: (password, code) => req('POST', '/api/login', { password, code }),
-  authInfo: () => req('GET', '/api/auth-info'),
+  login: (password) => req('POST', '/api/login', { password }),
   onSite: () => req('GET', '/api/on-site'),
   attendance: (q) => req('GET', '/api/attendance?' + new URLSearchParams(q)),
   updateAttendance: (id, d) => req('PUT', `/api/attendance/${id}`, d),
@@ -39,6 +38,11 @@ export const api = {
   deleteSite: (id) => req('DELETE', `/api/sites/${id}`),
   addSitePhone: (id, phone_number) => req('POST', `/api/sites/${id}/phones`, { phone_number }),
   deleteSitePhone: (id, phoneId) => req('DELETE', `/api/sites/${id}/phones/${phoneId}`),
+  addSchedule: (id, d) => req('POST', `/api/sites/${id}/schedules`, d),
+  deleteSchedule: (id) => req('DELETE', `/api/schedules/${id}`),
+  addContact: (id, phone_number) => req('POST', `/api/sites/${id}/contacts`, { phone_number }),
+  deleteContact: (id) => req('DELETE', `/api/contacts/${id}`),
+  scheduleAlerts: () => req('GET', '/api/schedule-alerts'),
   shifts: () => req('GET', '/api/shifts'),
   addShift: (d) => req('POST', '/api/shifts', d),
 };

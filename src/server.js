@@ -5,7 +5,7 @@ import { dirname, join } from 'path';
 import { existsSync } from 'fs';
 
 import pool, { migrate } from './db.js';
-import { login, totpEnabled, requireAuth } from './auth.js';
+import { login, requireAuth } from './auth.js';
 import { startShiftWatcher } from './notifications.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -73,6 +73,21 @@ app.post('/voice/code', validateTwilio, async (req, res) => {
     } else {
       const emp = rows[0];
 
+      // Už je zaměstnanec evidován ve službě? (poslední přihlášení ještě nevypršelo)
+      // Pokud ano, znovu ho nezapisujeme a jen mu to oznámíme.
+      const activeRes = await pool.query(
+        `SELECT 1 FROM attendance_logs
+          WHERE employee_id = $1 AND event_type = 'check_in'
+            AND called_at + (hours || ' hours')::interval > now()
+          LIMIT 1`,
+        [emp.id]
+      );
+      if (activeRes.rows.length > 0) {
+        twiml.say(SAY, 'Dnes jste již evidován ve službě.');
+        twiml.hangup();
+        return res.type('text/xml').send(twiml.toString());
+      }
+
       // Objekt se určí podle ČÍSLA, ZE KTERÉHO SE VOLÁ (telefon patří objektu).
       const siteRes = await pool.query(
         `SELECT s.id, s.name
@@ -120,13 +135,10 @@ app.post('/voice/code', validateTwilio, async (req, res) => {
 /* =====================  REST API PRO CRM  ===================== */
 
 app.post('/api/login', (req, res) => {
-  const result = login(req.body.password, req.body.code);
-  if (result.error) return res.status(401).json({ error: result.error, needCode: result.needCode });
+  const result = login(req.body.password);
+  if (result.error) return res.status(401).json({ error: result.error });
   res.json({ token: result.token });
 });
-
-// Veřejná informace pro přihlašovací stránku – zda je zapnuté dvoufaktorové ověření.
-app.get('/api/auth-info', (_req, res) => res.json({ totp: totpEnabled() }));
 
 // Kdo je právě přihlášený ve službě = poslední přihlášení + délka směny daného záznamu
 // (hodiny zaměstnance) ještě neuplynulo. Po uplynutí z přehledu automaticky zmizí.
@@ -220,14 +232,20 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
 app.get('/api/sites', requireAuth, async (_req, res) => {
   const { rows } = await pool.query(`
     SELECT s.id, s.name, s.address,
-           COALESCE(
-             json_agg(json_build_object('id', sp.id, 'phone_number', sp.phone_number)
-                      ORDER BY sp.phone_number)
-             FILTER (WHERE sp.id IS NOT NULL), '[]'
-           ) AS phones
+      COALESCE((SELECT json_agg(json_build_object('id', sp.id, 'phone_number', sp.phone_number)
+                                ORDER BY sp.phone_number)
+                  FROM site_phones sp WHERE sp.site_id = s.id), '[]') AS phones,
+      COALESCE((SELECT json_agg(json_build_object('id', sc.id,
+                                'expected_time', to_char(sc.expected_time, 'HH24:MI'),
+                                'dow', sc.dow,
+                                'first_alert_min', sc.first_alert_min,
+                                'second_alert_min', sc.second_alert_min)
+                                ORDER BY sc.expected_time)
+                  FROM site_schedules sc WHERE sc.site_id = s.id), '[]') AS schedules,
+      COALESCE((SELECT json_agg(json_build_object('id', ct.id, 'phone_number', ct.phone_number)
+                                ORDER BY ct.phone_number)
+                  FROM site_contacts ct WHERE ct.site_id = s.id), '[]') AS contacts
       FROM sites s
- LEFT JOIN site_phones sp ON sp.site_id = s.id
-  GROUP BY s.id
   ORDER BY s.name
   `);
   res.json(rows);
@@ -266,6 +284,52 @@ app.post('/api/sites/:id/phones', requireAuth, async (req, res) => {
 app.delete('/api/sites/:id/phones/:phoneId', requireAuth, async (req, res) => {
   await pool.query('DELETE FROM site_phones WHERE id = $1', [req.params.phoneId]);
   res.json({ ok: true });
+});
+
+// --- Očekávané časy příchodu na pobočku (hlídání) ---
+app.post('/api/sites/:id/schedules', requireAuth, async (req, res) => {
+  const { expected_time, dow } = req.body;
+  if (!expected_time) return res.status(400).json({ error: 'Zadejte čas' });
+  const days = (dow || '1234567').toString().replace(/[^1-7]/g, '') || '1234567';
+  const { rows } = await pool.query(
+    `INSERT INTO site_schedules (site_id, expected_time, dow) VALUES ($1, $2, $3)
+     RETURNING id, to_char(expected_time, 'HH24:MI') AS expected_time, dow`,
+    [req.params.id, expected_time, days]
+  );
+  res.json(rows[0]);
+});
+app.delete('/api/schedules/:id', requireAuth, async (req, res) => {
+  await pool.query('DELETE FROM site_schedules WHERE id = $1', [req.params.id]);
+  res.json({ ok: true });
+});
+
+// --- Kontaktní čísla pobočky pro 2. eskalaci (+30 min) ---
+app.post('/api/sites/:id/contacts', requireAuth, async (req, res) => {
+  const { phone_number } = req.body;
+  if (!phone_number) return res.status(400).json({ error: 'Zadejte číslo' });
+  const { rows } = await pool.query(
+    'INSERT INTO site_contacts (site_id, phone_number) VALUES ($1, $2) RETURNING *',
+    [req.params.id, phone_number.trim()]
+  );
+  res.json(rows[0]);
+});
+app.delete('/api/contacts/:id', requireAuth, async (req, res) => {
+  await pool.query('DELETE FROM site_contacts WHERE id = $1', [req.params.id]);
+  res.json({ ok: true });
+});
+
+// Posledních pár odeslaných upozornění (pro přehled v hlídání)
+app.get('/api/schedule-alerts', requireAuth, async (_req, res) => {
+  const { rows } = await pool.query(`
+    SELECT a.id, a.alert_date, a.level, a.sent_at,
+           to_char(sc.expected_time, 'HH24:MI') AS expected_time, s.name AS site
+      FROM schedule_alerts a
+      JOIN site_schedules sc ON sc.id = a.schedule_id
+      JOIN sites s ON s.id = sc.site_id
+     ORDER BY a.sent_at DESC
+     LIMIT 50
+  `);
+  res.json(rows);
 });
 
 // --- Směny (pro hlídání nenahlášení) ---

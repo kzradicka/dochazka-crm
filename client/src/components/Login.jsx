@@ -1,21 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { api } from '../api.js';
 
 export default function Login({ onSuccess }) {
   const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
-  const [totp, setTotp] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    api.authInfo().then((i) => setTotp(i.totp)).catch(() => {});
-  }, []);
 
   async function submit() {
     setErr(''); setBusy(true);
     try {
-      const { token } = await api.login(password, code);
+      const { token } = await api.login(password);
       onSuccess(token);
     } catch (e) {
       setErr(e.message || 'Přihlášení se nezdařilo');
@@ -38,17 +32,6 @@ export default function Login({ onSuccess }) {
           onKeyDown={(e) => e.key === 'Enter' && submit()}
           autoFocus
         />
-        {totp && (
-          <input
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            placeholder="Kód z aplikace (6 číslic)"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && submit()}
-          />
-        )}
         <button className="btn-primary" onClick={submit} disabled={busy}>
           {busy ? 'Přihlašuji…' : 'Přihlásit se'}
         </button>

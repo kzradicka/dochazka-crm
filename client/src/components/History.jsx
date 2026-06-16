@@ -60,6 +60,31 @@ export default function History() {
     XLSX.writeFile(wb, `dochazka_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
+  // Přehled: součet hodin za zvolený rozsah, jeden řádek na osobu.
+  function exportPrehled() {
+    const map = new Map();
+    for (const r of rows) {
+      const key = r.pin_code;
+      if (!map.has(key)) map.set(key, { employee: r.employee, pin_code: r.pin_code, hours: 0, smeny: 0 });
+      const o = map.get(key);
+      o.hours += Number(r.hours) || 0;
+      o.smeny += 1;
+    }
+    const data = [...map.values()]
+      .sort((a, b) => a.employee.localeCompare(b.employee, 'cs'))
+      .map((x) => ({
+        'Jméno': x.employee,
+        'Osobní číslo': x.pin_code,
+        'Počet směn': x.smeny,
+        'Celkem hodin': x.hours,
+      }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Přehled hodin');
+    const range = [filters.from, filters.to].filter(Boolean).join('_');
+    XLSX.writeFile(wb, `prehled_hodin_${range || new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
   const set = (k) => (e) => setFilters({ ...filters, [k]: e.target.value });
 
   return (
@@ -85,6 +110,7 @@ export default function History() {
           </div>
           <button className="btn-primary" onClick={load}>Filtrovat</button>
           <button className="btn-ghost" onClick={exportXlsx} disabled={!rows.length}>Export do Excelu</button>
+          <button className="btn-ghost" onClick={exportPrehled} disabled={!rows.length}>Export přehledu</button>
         </div>
 
         {loading ? (

@@ -58,3 +58,41 @@ ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS hours NUMERIC NOT NULL DEFA
 
 -- Délka směny zaměstnance v hodinách (1–12). Určuje výchozí hodiny záznamu i automatické odhlášení.
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_hours INTEGER NOT NULL DEFAULT 12;
+
+-- ============================================================
+-- Hlídání příchodů per pobočka (nový systém)
+-- ============================================================
+
+-- Očekávané časy příchodu na pobočku. Ke každé pobočce libovolný počet časů.
+-- dow = dny v týdnu, kdy čas platí (řetězec číslic 1=Po … 7=Ne, např. '12345').
+CREATE TABLE IF NOT EXISTS site_schedules (
+    id               SERIAL PRIMARY KEY,
+    site_id          INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    expected_time    TIME NOT NULL,
+    dow              TEXT NOT NULL DEFAULT '1234567',
+    first_alert_min  INTEGER NOT NULL DEFAULT 15,
+    second_alert_min INTEGER NOT NULL DEFAULT 30,
+    active           BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_site_schedules_site ON site_schedules (site_id);
+
+-- Kontaktní čísla pro druhou eskalaci (+30 min). Ručně přidávaná, oddělená od čísel,
+-- ze kterých se na pobočce hlásí.
+CREATE TABLE IF NOT EXISTS site_contacts (
+    id           SERIAL PRIMARY KEY,
+    site_id      INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    phone_number TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_site_contacts_site ON site_contacts (site_id);
+
+-- Evidence odeslaných upozornění, aby se neposílala opakovaně.
+-- level 1 = SMS na pobočku (+15 min), level 2 = SMS na kontakty (+30 min).
+CREATE TABLE IF NOT EXISTS schedule_alerts (
+    id          BIGSERIAL PRIMARY KEY,
+    schedule_id INTEGER NOT NULL REFERENCES site_schedules(id) ON DELETE CASCADE,
+    alert_date  DATE NOT NULL,
+    level       SMALLINT NOT NULL,
+    sent_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (schedule_id, alert_date, level)
+);
