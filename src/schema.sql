@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS site_contacts (
 CREATE INDEX IF NOT EXISTS idx_site_contacts_site ON site_contacts (site_id);
 
 -- Evidence odeslaných upozornění, aby se neposílala opakovaně.
--- level 1 = SMS na pobočku (+15 min), level 2 = SMS na kontakty (+30 min).
+-- level 1 = hovor na pobočku (+10 min), level 2 = hovor na kontakty (+15 min).
 CREATE TABLE IF NOT EXISTS schedule_alerts (
     id          BIGSERIAL PRIMARY KEY,
     schedule_id INTEGER NOT NULL REFERENCES site_schedules(id) ON DELETE CASCADE,

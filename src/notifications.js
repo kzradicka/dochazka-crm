@@ -1,28 +1,35 @@
 import twilio from 'twilio';
 import pool from './db.js';
 
-// Twilio klient (volitelné) – pro odchozí SMS notifikace.
+// Twilio klient (volitelné) – pro odchozí hovory s namluvenou hláškou.
 let twilioClient = null;
 if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
   twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 }
 
 // Časy eskalace (v minutách od očekávaného příchodu):
-// 1. SMS na čísla pobočky po 10 min, 2. SMS na kontaktní čísla po 15 min.
+// 1. hovor na čísla pobočky po 10 min, 2. hovor na kontaktní čísla po 15 min.
 const FIRST_ALERT_MIN = 10;
 const SECOND_ALERT_MIN = 15;
 
-// Odešle SMS. Když není Twilio nastavené, jen zaloguje (aby šlo testovat bez SMS).
-async function sendSms(to, body) {
+// Český hlas pro automat (stejný jako telefonní linka pro nahlašování).
+const SAY = { voice: 'Google.cs-CZ-Standard-A', language: 'cs-CZ' };
+
+// Zavolá na číslo a přehraje namluvenou hlášku.
+// Když není Twilio nastavené, jen zaloguje (aby šlo testovat bez Twilia).
+async function placeCall(to, message) {
   if (!twilioClient || !process.env.TWILIO_NUMBER) {
-    console.warn('SMS nenastavena (chybí TWILIO_*):', to, '|', body);
+    console.warn('Hovor nenastaven (chybí TWILIO_*):', to, '|', message);
     return;
   }
   try {
-    await twilioClient.messages.create({ from: process.env.TWILIO_NUMBER, to, body });
-    console.log('SMS odeslána:', to);
+    const vr = new twilio.twiml.VoiceResponse();
+    vr.pause({ length: 1 }); // krátká pauza, ať se neuřízne začátek
+    vr.say(SAY, message);
+    await twilioClient.calls.create({ from: process.env.TWILIO_NUMBER, to, twiml: vr.toString() });
+    console.log('Hovor zahájen:', to);
   } catch (e) {
-    console.error('Chyba odeslání SMS na', to, ':', e.message);
+    console.error('Chyba hovoru na', to, ':', e.message);
   }
 }
 
@@ -66,7 +73,7 @@ async function recordAlert(scheduleId, dateISO, level) {
 
 // Hlavní kontrola – běží každou minutu.
 // Pro každý očekávaný čas příchodu, který už uplynul a nikdo se na pobočce nenahlásil,
-// pošle ve +15 min SMS na čísla pobočky a ve +30 min SMS na kontaktní čísla.
+// zavolá v +10 min na čísla pobočky a v +15 min na kontaktní čísla.
 async function checkSiteSchedules() {
   const { dateISO, minutesOfDay, dow } = pragueNow();
 
@@ -102,28 +109,28 @@ async function checkSiteSchedules() {
     );
     if (chk.length > 0) continue; // někdo se nahlásil → žádné upozornění
 
-    // 1. eskalace (+15 min): SMS na čísla pobočky
+    // 1. eskalace (+10 min): hovor na čísla pobočky
     if (elapsed >= FIRST_ALERT_MIN && !(await alertAlreadySent(sc.id, dateISO, 1))) {
       const { rows: phones } = await pool.query(
         'SELECT phone_number FROM site_phones WHERE site_id = $1',
         [sc.site_id]
       );
-      const body = `Docházka – pobočka ${sc.site_name}: v ${sc.expected_time} se nikdo nenahlásil ke službě.`;
-      for (const p of phones) await sendSms(p.phone_number, body);
+      const message = `Dobrý den, docházkový systém B plus H dosud nezaznamenal nástup do služby na objektu ${sc.site_name}. Zavolejte ihned na linku docházkového systému a nahlaste se do služby. Na slyšenou.`;
+      for (const p of phones) await placeCall(p.phone_number, message);
       await recordAlert(sc.id, dateISO, 1);
-      console.log(`Upozornění 1 (pobočka) odesláno: ${sc.site_name} ${sc.expected_time}`);
+      console.log(`Hovor 1 (pobočka) zahájen: ${sc.site_name} ${sc.expected_time}`);
     }
 
-    // 2. eskalace (+30 min): SMS na kontaktní čísla
+    // 2. eskalace (+15 min): hovor na kontaktní (emergency) čísla
     if (elapsed >= SECOND_ALERT_MIN && !(await alertAlreadySent(sc.id, dateISO, 2))) {
       const { rows: contacts } = await pool.query(
         'SELECT phone_number FROM site_contacts WHERE site_id = $1',
         [sc.site_id]
       );
-      const body = `Docházka – pobočka ${sc.site_name}: stále se nikdo nenahlásil k příchodu v ${sc.expected_time}. Prosím prověřte.`;
-      for (const c of contacts) await sendSms(c.phone_number, body);
+      const message = `Dobrý den, varování. Docházkový systém B plus H doposud nezaznamenal nástup do služby na objektu ${sc.site_name}. Prověřte ihned telefonicky objekt ${sc.site_name}. Děkuji.`;
+      for (const c of contacts) await placeCall(c.phone_number, message);
       await recordAlert(sc.id, dateISO, 2);
-      console.log(`Upozornění 2 (kontakty) odesláno: ${sc.site_name} ${sc.expected_time}`);
+      console.log(`Hovor 2 (kontakty) zahájen: ${sc.site_name} ${sc.expected_time}`);
     }
   }
 }
