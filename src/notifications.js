@@ -33,6 +33,19 @@ async function placeCall(to, message) {
   }
 }
 
+// Pauza mezi hovory, aby se na stejné číslo nevolalo, dokud předchozí hovor neskončí.
+// Twilio jinak druhý hovor založí na obsazenou linku a fyzicky se dovolá jen první.
+const CALL_GAP_SEC = 45;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Obvolá seznam čísel postupně, s pauzou mezi jednotlivými hovory (ne před prvním).
+async function callSequentially(numbers, message) {
+  for (let i = 0; i < numbers.length; i++) {
+    if (i > 0) await sleep(CALL_GAP_SEC * 1000);
+    await placeCall(numbers[i], message);
+  }
+}
+
 // Aktuální čas v Evropě/Praha – datum, minuty od půlnoci a den v týdnu (1=Po … 7=Ne).
 function pragueNow() {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -115,10 +128,12 @@ async function checkSiteSchedules() {
         'SELECT phone_number FROM site_phones WHERE site_id = $1',
         [sc.site_id]
       );
-      const message = `Dobrý den, docházkový systém B plus H dosud nezaznamenal nástup do služby na objektu ${sc.site_name}. Zavolejte ihned na linku docházkového systému a nahlaste se do služby. Na slyšenou.`;
-      for (const p of phones) await placeCall(p.phone_number, message);
+      // Zamkneme eskalaci HNED, ještě před obvoláním. Obvolání s pauzami může trvat
+      // déle než interval (60 s), takže bez tohoto by ji další tick mohl spustit znovu.
       await recordAlert(sc.id, dateISO, 1);
+      const message = `Dobrý den, docházkový systém B plus H dosud nezaznamenal nástup do služby na objektu ${sc.site_name}. Zavolejte ihned na linku docházkového systému a nahlaste se do služby. Na slyšenou.`;
       console.log(`Hovor 1 (pobočka) zahájen: ${sc.site_name} ${sc.expected_time}`);
+      await callSequentially(phones.map((p) => p.phone_number), message);
     }
 
     // 2. eskalace (+15 min): hovor na kontaktní (emergency) čísla
@@ -127,10 +142,10 @@ async function checkSiteSchedules() {
         'SELECT phone_number FROM site_contacts WHERE site_id = $1',
         [sc.site_id]
       );
-      const message = `Dobrý den, varování. Docházkový systém B plus H doposud nezaznamenal nástup do služby na objektu ${sc.site_name}. Prověřte ihned telefonicky objekt ${sc.site_name}. Děkuji.`;
-      for (const c of contacts) await placeCall(c.phone_number, message);
       await recordAlert(sc.id, dateISO, 2);
+      const message = `Dobrý den, varování. Docházkový systém B plus H doposud nezaznamenal nástup do služby na objektu ${sc.site_name}. Prověřte ihned telefonicky objekt ${sc.site_name}. Děkuji.`;
       console.log(`Hovor 2 (kontakty) zahájen: ${sc.site_name} ${sc.expected_time}`);
+      await callSequentially(contacts.map((c) => c.phone_number), message);
     }
   }
 }
