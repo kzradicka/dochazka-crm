@@ -12,6 +12,11 @@ if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
 const FIRST_ALERT_MIN = 10;
 const SECOND_ALERT_MIN = 15;
 
+// Jak dlouho PŘED očekávaným časem se počítá nahlášení (aby se zachytili i ti,
+// kdo dorazí dříve). Pozor: nesmí být delší než odstup mezi dvěma směnami téhož
+// objektu, jinak by se ranní nahlášení započítalo i do okna večerní směny.
+const CHECK_IN_WINDOW_MIN = 180;
+
 // Český hlas pro automat (stejný jako telefonní linka pro nahlašování).
 const SAY = { voice: 'Google.cs-CZ-Standard-A', language: 'cs-CZ' };
 
@@ -110,8 +115,8 @@ async function checkSiteSchedules() {
     if (elapsed < FIRST_ALERT_MIN) continue;
     if (elapsed > 240) continue;
 
-    // Nahlásil se na pobočce dnes někdo v okně [očekávaný čas − 60 min, teď]?
-    const windowStart = minToTime(Math.max(0, expectedMin - 60));
+    // Nahlásil se na pobočce dnes někdo v okně [očekávaný čas − CHECK_IN_WINDOW_MIN, teď]?
+    const windowStart = minToTime(Math.max(0, expectedMin - CHECK_IN_WINDOW_MIN));
     const { rows: chk } = await pool.query(
       `SELECT 1 FROM attendance_logs
         WHERE site_id = $1 AND event_type = 'check_in'
