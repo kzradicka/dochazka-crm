@@ -50,14 +50,13 @@ app.post('/voice', validateTwilio, (req, res) => {
   res.type('text/xml').send(twiml.toString());
 });
 
-// 2) Zpracování zadaného kódu = přihlášení na pracoviště (zápis rovnou).
-//    Zaměstnanec se NEodhlašuje – systém ho automaticky "odhlásí" po SHIFT_HOURS hodinách
-//    (přihlášený je ten, jehož poslední přihlášení není starší než tato doba).
+// 2) Zpracování zadaného kódu.
+//    - Objekt BEZ requires_checkout: rovnou přihlášení (jako dřív), auto-odhlášení po SHIFT_HOURS.
+//    - Objekt S requires_checkout: nabídne 1 = přihlášení, 2 = odhlášení (viz /voice/action).
 app.post('/voice/code', validateTwilio, async (req, res) => {
   const attempt = parseInt(req.query.attempt || '1', 10);
   const digits = (req.body.Digits || '').trim();
   const callerNumber = req.body.From;
-  const calledNumber = req.body.To;
   const callSid = req.body.CallSid;
   const twiml = new VoiceResponse();
 
@@ -70,60 +69,43 @@ app.post('/voice/code', validateTwilio, async (req, res) => {
     if (rows.length === 0) {
       twiml.say(SAY, 'Neplatný kód.');
       twiml.redirect({ method: 'POST' }, `/voice?attempt=${attempt + 1}`);
-    } else {
-      const emp = rows[0];
-
-      // Už je zaměstnanec evidován ve službě? (poslední přihlášení ještě nevypršelo)
-      // Pokud ano, znovu ho nezapisujeme a jen mu to oznámíme.
-      const activeRes = await pool.query(
-        `SELECT 1 FROM attendance_logs
-          WHERE employee_id = $1 AND event_type = 'check_in'
-            AND called_at + (hours || ' hours')::interval > now()
-          LIMIT 1`,
-        [emp.id]
-      );
-      if (activeRes.rows.length > 0) {
-        twiml.say(SAY, 'Dnes jste již evidován ve službě.');
-        twiml.hangup();
-        return res.type('text/xml').send(twiml.toString());
-      }
-
-      // Objekt se určí podle ČÍSLA, ZE KTERÉHO SE VOLÁ (telefon patří objektu).
-      const siteRes = await pool.query(
-        `SELECT s.id, s.name
-           FROM site_phones sp
-           JOIN sites s ON s.id = sp.site_id
-          WHERE sp.phone_number = $1`,
-        [callerNumber]
-      );
-      const site = siteRes.rows[0] || null;
-
-      if (!site) {
-        // Číslo není přiřazené k žádnému objektu → hlášení se odmítne.
-        twiml.say(
-          SAY,
-          'Toto telefonní číslo není přiřazeno k žádnému objektu. Kontaktujte prosím dispečink. Na slyšenou.'
-        );
-        twiml.hangup();
-        return res.type('text/xml').send(twiml.toString());
-      }
-
-      // Ověřování konkrétní osoby zajišťuje osobní kód; číslo se ukládá pro evidenci.
-      // Hodiny záznamu = délka směny daného zaměstnance (zachytí se v okamžiku přihlášení).
-      const shiftHours = emp.shift_hours || SHIFT_HOURS;
-      await pool.query(
-        `INSERT INTO attendance_logs
-           (employee_id, site_id, event_type, caller_number, caller_verified, call_sid, hours)
-         VALUES ($1, $2, 'check_in', $3, TRUE, $4, $5)`,
-        [emp.id, site.id, callerNumber, callSid, shiftHours]
-      );
-
-      twiml.say(
-        SAY,
-        `Děkujeme, ${emp.name}. Byli jste přihlášeni do služby na objektu ${site.name}. Přejeme klidnou směnu, na slyšenou.`
-      );
-      twiml.hangup();
+      return res.type('text/xml').send(twiml.toString());
     }
+
+    const emp = rows[0];
+
+    // Objekt se určí podle ČÍSLA, ZE KTERÉHO SE VOLÁ (telefon patří objektu).
+    const siteRes = await pool.query(
+      `SELECT s.id, s.name, s.requires_checkout
+         FROM site_phones sp
+         JOIN sites s ON s.id = sp.site_id
+        WHERE sp.phone_number = $1`,
+      [callerNumber]
+    );
+    const site = siteRes.rows[0] || null;
+
+    if (!site) {
+      twiml.say(SAY, 'Toto telefonní číslo není přiřazeno k žádnému objektu. Kontaktujte prosím dispečink. Na slyšenou.');
+      twiml.hangup();
+      return res.type('text/xml').send(twiml.toString());
+    }
+
+    // Objekt s odhlašováním → nabídneme volbu 1/2. Kód (digits) posíláme dál v query.
+    if (site.requires_checkout) {
+      const gather = twiml.gather({
+        input: 'dtmf',
+        numDigits: 1,
+        timeout: 8,
+        action: `/voice/action?code=${encodeURIComponent(digits)}`,
+        method: 'POST',
+      });
+      gather.say(SAY, `Děkujeme, ${emp.name}. Pro přihlášení do služby stiskněte jedna, pro odhlášení stiskněte dva.`);
+      twiml.redirect({ method: 'POST' }, `/voice/action?code=${encodeURIComponent(digits)}`);
+      return res.type('text/xml').send(twiml.toString());
+    }
+
+    // Objekt BEZ odhlašování → chování jako dřív (rovnou přihlášení).
+    await doCheckIn(emp, site, callerNumber, callSid, twiml);
   } catch (e) {
     console.error('Chyba zápisu přihlášení:', e.message);
     twiml.say(SAY, 'Omlouváme se, došlo k technické chybě. Zkuste to prosím později.');
@@ -131,6 +113,146 @@ app.post('/voice/code', validateTwilio, async (req, res) => {
   }
   res.type('text/xml').send(twiml.toString());
 });
+
+// 2b) Volba na objektu s odhlašováním: 1 = přihlášení, 2 = odhlášení.
+app.post('/voice/action', validateTwilio, async (req, res) => {
+  const choice = (req.body.Digits || '').trim();
+  const code = (req.query.code || '').trim();
+  const callerNumber = req.body.From;
+  const callSid = req.body.CallSid;
+  const twiml = new VoiceResponse();
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, name, phone, shift_hours FROM employees WHERE pin_code = $1 AND active = TRUE',
+      [code]
+    );
+    const emp = rows[0];
+    const siteRes = await pool.query(
+      `SELECT s.id, s.name, s.requires_checkout
+         FROM site_phones sp JOIN sites s ON s.id = sp.site_id
+        WHERE sp.phone_number = $1`,
+      [callerNumber]
+    );
+    const site = siteRes.rows[0] || null;
+
+    if (!emp || !site) {
+      twiml.say(SAY, 'Došlo k chybě, zkuste to prosím znovu. Na slyšenou.');
+      twiml.hangup();
+      return res.type('text/xml').send(twiml.toString());
+    }
+
+    if (choice === '2') {
+      await doCheckOut(emp, site, twiml);
+    } else if (choice === '1') {
+      await doCheckIn(emp, site, callerNumber, callSid, twiml);
+    } else {
+      twiml.say(SAY, 'Nebyla vybrána platná volba. Na slyšenou.');
+      twiml.hangup();
+    }
+  } catch (e) {
+    console.error('Chyba volby přihlášení/odhlášení:', e.message);
+    twiml.say(SAY, 'Omlouváme se, došlo k technické chybě. Zkuste to prosím později.');
+    twiml.hangup();
+  }
+  res.type('text/xml').send(twiml.toString());
+});
+
+// Zjistí, zda je zaměstnanec právě ve službě. Model "poslední událost":
+// je ve službě, pokud jeho NEJNOVĚJŠÍ záznam je check_in, který ještě nevypršel
+// (po odhlášení je nejnovější check_out → není ve službě a hned zmizí z přehledu).
+async function isOnShift(employeeId) {
+  const { rows } = await pool.query(
+    `SELECT id, event_type FROM attendance_logs
+      WHERE employee_id = $1
+      ORDER BY called_at DESC LIMIT 1`,
+    [employeeId]
+  );
+  const last = rows[0];
+  if (!last || last.event_type !== 'check_in') return null;
+  // Ověříme, že přihlášení ještě nevypršelo (auto-odhlášení po délce směny).
+  const { rows: valid } = await pool.query(
+    `SELECT id FROM attendance_logs
+      WHERE id = $1 AND called_at + (hours || ' hours')::interval > now()`,
+    [last.id]
+  );
+  return valid[0] || null;
+}
+
+// Naplánovaný čas odhlášení = nejbližší očekávaný čas příchodu objektu (dnešní) + délka směny.
+// Pokud objekt nemá žádný rozvrh, vrátí NULL (odhlášení se pak nehlídá časově).
+async function computeExpectedCheckout(siteId, shiftHours) {
+  const { rows } = await pool.query(
+    `SELECT to_char(expected_time, 'HH24:MI') AS t FROM site_schedules
+      WHERE site_id = $1 AND active = TRUE`,
+    [siteId]
+  );
+  if (rows.length === 0) return null;
+  // Aktuální čas v Praze (minuty od půlnoci) pro výběr nejbližšího rozvrhu.
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Prague', hour12: false, hour: '2-digit', minute: '2-digit',
+  }).formatToParts(new Date());
+  const g = (t) => parts.find((p) => p.type === t)?.value;
+  let nowH = parseInt(g('hour'), 10); if (nowH === 24) nowH = 0;
+  const nowMin = nowH * 60 + parseInt(g('minute'), 10);
+  // Vybereme rozvrh, jehož čas je nejblíž aktuálnímu (ten, na který se člověk hlásí).
+  let best = null, bestDiff = Infinity;
+  for (const r of rows) {
+    const [h, m] = r.t.split(':').map(Number);
+    const diff = Math.abs(h * 60 + m - nowMin);
+    if (diff < bestDiff) { bestDiff = diff; best = r.t; }
+  }
+  // expected_checkout = dnešní datum (Praha) v čase (rozvrh + shiftHours), jako TIMESTAMPTZ.
+  const [bh, bm] = best.split(':').map(Number);
+  const endMin = bh * 60 + bm + shiftHours * 60;
+  const endStr = `${String(Math.floor((endMin / 60) % 24)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+  // Pomocí SQL převedeme "dnešní pražské datum + čas" na správný TIMESTAMPTZ (řeší i přesah přes půlnoc jen zhruba).
+  const { rows: tsRows } = await pool.query(
+    `SELECT ((now() AT TIME ZONE 'Europe/Prague')::date + $1::time) AT TIME ZONE 'Europe/Prague' AS ts`,
+    [endStr]
+  );
+  return tsRows[0]?.ts || null;
+}
+
+// Zapíše přihlášení. Na objektu s odhlašováním navíc uloží očekávaný čas odhlášení.
+async function doCheckIn(emp, site, callerNumber, callSid, twiml) {
+  const already = await isOnShift(emp.id);
+  if (already) {
+    twiml.say(SAY, 'Jste již přihlášen ve službě.');
+    twiml.hangup();
+    return;
+  }
+  const shiftHours = emp.shift_hours || SHIFT_HOURS;
+  const expectedCheckout = site.requires_checkout
+    ? await computeExpectedCheckout(site.id, shiftHours)
+    : null;
+  await pool.query(
+    `INSERT INTO attendance_logs
+       (employee_id, site_id, event_type, caller_number, caller_verified, call_sid, hours, expected_checkout)
+     VALUES ($1, $2, 'check_in', $3, TRUE, $4, $5, $6)`,
+    [emp.id, site.id, callerNumber, callSid, shiftHours, expectedCheckout]
+  );
+  twiml.say(SAY, `Děkujeme, ${emp.name}. Byli jste přihlášeni do služby na objektu ${site.name}. Přejeme klidnou směnu, na slyšenou.`);
+  twiml.hangup();
+}
+
+// Zapíše odhlášení. Uzavře poslední otevřené přihlášení daného zaměstnance.
+async function doCheckOut(emp, site, twiml) {
+  const open = await isOnShift(emp.id);
+  if (!open) {
+    twiml.say(SAY, 'Nejste přihlášen ve službě, odhlášení není možné. Na slyšenou.');
+    twiml.hangup();
+    return;
+  }
+  await pool.query(
+    `INSERT INTO attendance_logs
+       (employee_id, site_id, event_type, caller_verified, hours)
+     VALUES ($1, $2, 'check_out', TRUE, 0)`,
+    [emp.id, site.id]
+  );
+  twiml.say(SAY, `Děkujeme, ${emp.name}. Byli jste odhlášeni ze služby na objektu ${site.name}. Na slyšenou.`);
+  twiml.hangup();
+}
 
 /* =====================  REST API PRO CRM  ===================== */
 
@@ -143,18 +265,26 @@ app.post('/api/login', (req, res) => {
 // Kdo je právě přihlášený ve službě = poslední přihlášení + délka směny daného záznamu
 // (hodiny zaměstnance) ještě neuplynulo. Po uplynutí z přehledu automaticky zmizí.
 app.get('/api/on-site', requireAuth, async (_req, res) => {
+  // Bereme POSLEDNÍ událost každého zaměstnance; ve službě je jen ten,
+  // jehož poslední událost je platné (nevypršelé) přihlášení. Kdo se odhlásil
+  // (poslední událost = check_out), v přehledu není.
   const { rows } = await pool.query(`
-    SELECT DISTINCT ON (l.employee_id)
-           e.name AS employee, e.pin_code, s.name AS site,
-           l.called_at AS since,
-           l.called_at + (l.hours || ' hours')::interval AS until,
-           l.hours
-      FROM attendance_logs l
-      JOIN employees e ON e.id = l.employee_id
- LEFT JOIN sites s     ON s.id = l.site_id
-     WHERE l.event_type = 'check_in'
-       AND l.called_at + (l.hours || ' hours')::interval > now()
-     ORDER BY l.employee_id, l.called_at DESC
+    WITH last_event AS (
+      SELECT DISTINCT ON (l.employee_id)
+             l.employee_id, l.event_type, l.site_id, l.called_at, l.hours
+        FROM attendance_logs l
+       ORDER BY l.employee_id, l.called_at DESC
+    )
+    SELECT e.name AS employee, e.pin_code, s.name AS site,
+           le.called_at AS since,
+           le.called_at + (le.hours || ' hours')::interval AS until,
+           le.hours
+      FROM last_event le
+      JOIN employees e ON e.id = le.employee_id
+ LEFT JOIN sites s     ON s.id = le.site_id
+     WHERE le.event_type = 'check_in'
+       AND le.called_at + (le.hours || ' hours')::interval > now()
+     ORDER BY le.called_at DESC
   `);
   res.json(rows);
 });
@@ -231,7 +361,7 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
 // --- Objekty ---
 app.get('/api/sites', requireAuth, async (_req, res) => {
   const { rows } = await pool.query(`
-    SELECT s.id, s.name, s.address,
+    SELECT s.id, s.name, s.address, s.requires_checkout,
       COALESCE((SELECT json_agg(json_build_object('id', sp.id, 'phone_number', sp.phone_number)
                                 ORDER BY sp.phone_number)
                   FROM site_phones sp WHERE sp.site_id = s.id), '[]') AS phones,
@@ -261,6 +391,17 @@ app.post('/api/sites', requireAuth, async (req, res) => {
 app.delete('/api/sites/:id', requireAuth, async (req, res) => {
   await pool.query('DELETE FROM sites WHERE id = $1', [req.params.id]);
   res.json({ ok: true });
+});
+
+// Úprava objektu – zatím jen přepínač "vyžadovat odhlášení".
+app.put('/api/sites/:id', requireAuth, async (req, res) => {
+  const { requires_checkout } = req.body;
+  const { rows } = await pool.query(
+    'UPDATE sites SET requires_checkout = $1 WHERE id = $2 RETURNING id, requires_checkout',
+    [!!requires_checkout, req.params.id]
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'Objekt nenalezen' });
+  res.json(rows[0]);
 });
 
 // Přiřazení telefonního čísla k objektu

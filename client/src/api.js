@@ -36,6 +36,7 @@ export const api = {
   sites: () => req('GET', '/api/sites'),
   addSite: (d) => req('POST', '/api/sites', d),
   deleteSite: (id) => req('DELETE', `/api/sites/${id}`),
+  updateSite: (id, d) => req('PUT', `/api/sites/${id}`, d),
   addSitePhone: (id, phone_number) => req('POST', `/api/sites/${id}/phones`, { phone_number }),
   deleteSitePhone: (id, phoneId) => req('DELETE', `/api/sites/${id}/phones/${phoneId}`),
   addSchedule: (id, d) => req('POST', `/api/sites/${id}/schedules`, d),

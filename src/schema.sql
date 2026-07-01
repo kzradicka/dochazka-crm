@@ -96,3 +96,26 @@ CREATE TABLE IF NOT EXISTS schedule_alerts (
     sent_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (schedule_id, alert_date, level)
 );
+
+-- ============================================================
+-- Odhlašování na vybraných objektech (jen kde requires_checkout = TRUE)
+-- ============================================================
+
+-- Příznak, že se na objektu musí zaměstnanec i odhlásit (IVR nabídne 1=přihlášení, 2=odhlášení).
+-- Ostatní objekty (FALSE) fungují beze změny – jen přihlášení.
+ALTER TABLE sites ADD COLUMN IF NOT EXISTS requires_checkout BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Očekávaný čas odhlášení pro daný check_in (naplánovaný začátek + délka směny).
+-- Vyplní se při přihlášení na objektu s requires_checkout; jinak zůstává NULL.
+ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS expected_checkout TIMESTAMPTZ;
+
+-- Evidence odeslaných upozornění na CHYBĚJÍCÍ odhlášení (aby se neopakovala).
+-- check_in_id = záznam přihlášení, level 1 = hovor na objekt (+10 min), level 2 = kontakty (+15 min).
+CREATE TABLE IF NOT EXISTS checkout_alerts (
+    id          BIGSERIAL PRIMARY KEY,
+    check_in_id BIGINT NOT NULL REFERENCES attendance_logs(id) ON DELETE CASCADE,
+    level       SMALLINT NOT NULL,
+    sent_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (check_in_id, level)
+);
+CREATE INDEX IF NOT EXISTS idx_checkout_alerts_checkin ON checkout_alerts (check_in_id);
