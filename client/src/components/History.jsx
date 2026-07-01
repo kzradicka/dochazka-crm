@@ -79,7 +79,7 @@ export default function History() {
 
     // Seskupení: zaměstnanec → den → { hasD, hasN, hours }.
     // Jeden den = jedna směna daného typu (víc nahlášení téhož typu se nezdvojuje).
-    const emps = new Map(); // pin_code → { name, days: Map(day → {hasD,hasN,hours}) }
+    const emps = new Map(); // pin_code → { name, days: Map(day → {hasD,hasN,hoursD,hoursN}) }
     for (const r of rows) {
       const t = pragueParts(r.called_at);
       const type = shiftType(t.hour);
@@ -93,15 +93,19 @@ export default function History() {
       else { if (!d.hasN) d.hoursN = hrs; d.hasN = true; }
     }
 
-    // Sestavení matice (Array of Arrays), aby šlo psát vzorce a prázdné buňky přesně.
+    // Hlavička: dny 0..31 (den 0 = sloupec B), pak souhrny. Sloupec D/N vypuštěn.
     const header = ['Pracovník'];
-    for (let i = 1; i <= 31; i++) header.push(String(i));
-    header.push('Den', 'Noc', 'D/N', 'celkem hodin', 'přesčas', 'so,ne', 'svátek', 'noční', 'poznámka');
+    for (let i = 0; i <= 31; i++) header.push(String(i));
+    header.push('Den', 'Noc', 'celkem hodin', 'přesčas', 'so,ne', 'svátek', 'noční', 'poznámka');
 
     const title = 'Podklad pro výpočet výplat – docházka';
-    const legend = 'D = denní/ranní směna, N = noční/večerní směna, D/N = více záznamů v jednom dni';
+    const legend = 'D = denní/ranní směna, N = noční/večerní směna, D/N = denní i noční směna v jednom dni';
 
     const aoa = [[title], [legend], header];
+
+    // Rozsah dnů v Excelu pro COUNTIF: B (den 0) až AG (den 31).
+    const DAY_FIRST = 'B';
+    const DAY_LAST = 'AG';
 
     const sorted = [...emps.values()].sort((a, b) => a.name.localeCompare(b.name, 'cs'));
     let rowIdx = 4; // první datový řádek v Excelu (1=title, 2=legend, 3=header)
@@ -109,19 +113,18 @@ export default function History() {
       const line = new Array(41).fill('');
       line[0] = emp.name;
       let hours = 0;
-      for (let day = 1; day <= 31; day++) {
+      for (let day = 0; day <= 31; day++) {
         const d = emp.days.get(day);
         if (!d) continue;
         let mark = '';
         if (d.hasD && d.hasN) { mark = 'D/N'; hours += d.hoursD + d.hoursN; }
         else if (d.hasD) { mark = 'D'; hours += d.hoursD; }
         else if (d.hasN) { mark = 'N'; hours += d.hoursN; }
-        line[day] = mark; // sloupce B..AF = index 1..31
+        line[day + 1] = mark; // den 0 → index 1 (B), den 31 → index 32 (AG)
       }
-      // AG(32)=Den, AH(33)=Noc, AI(34)=D/N vzorce jako ve vzoru; AJ(35)=celkem hodin (číslo).
-      line[32] = { f: `COUNTIF(B${rowIdx}:AF${rowIdx},"D")+COUNTIF(B${rowIdx}:AF${rowIdx},"D/N")` };
-      line[33] = { f: `COUNTIF(B${rowIdx}:AF${rowIdx},"N")+COUNTIF(B${rowIdx}:AF${rowIdx},"D/N")` };
-      line[34] = { f: `COUNTIF(B${rowIdx}:AF${rowIdx},"D/N")` };
+      // AH(33)=Den (počet D vč. D/N), AI(34)=Noc (počet N vč. D/N), AJ(35)=celkem hodin.
+      line[33] = { f: `COUNTIF(${DAY_FIRST}${rowIdx}:${DAY_LAST}${rowIdx},"D")+COUNTIF(${DAY_FIRST}${rowIdx}:${DAY_LAST}${rowIdx},"D/N")` };
+      line[34] = { f: `COUNTIF(${DAY_FIRST}${rowIdx}:${DAY_LAST}${rowIdx},"N")+COUNTIF(${DAY_FIRST}${rowIdx}:${DAY_LAST}${rowIdx},"D/N")` };
       line[35] = hours;
       // AK(36)..AO(40) zůstávají prázdné pro ruční doplnění.
       aoa.push(line);
@@ -129,9 +132,9 @@ export default function History() {
     }
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    // Šířka prvního sloupce (jména).
-    ws['!cols'] = [{ wch: 22 }, ...Array(31).fill({ wch: 3.5 }),
-      { wch: 5 }, { wch: 5 }, { wch: 5 }, { wch: 11 },
+    // Šířky: jméno, 32 dní (0..31), Den, Noc, celkem hodin, přesčas, so/ne, svátek, noční, poznámka.
+    ws['!cols'] = [{ wch: 22 }, ...Array(32).fill({ wch: 3.5 }),
+      { wch: 5 }, { wch: 5 }, { wch: 11 },
       { wch: 8 }, { wch: 7 }, { wch: 7 }, { wch: 7 }, { wch: 14 }];
 
     const wb = XLSX.utils.book_new();
