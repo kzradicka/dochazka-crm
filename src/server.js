@@ -179,6 +179,28 @@ async function isOnShift(employeeId) {
   return valid[0] || null;
 }
 
+// Otevřené přihlášení = poslední událost je check_in, které dosud nebylo uzavřeno odhlášením.
+// Na rozdíl od isOnShift NEbere 12h vypršení – odhlásit se musí jít i po skončení směny
+// (kdy už člověk zmizel z přehledu). Rezerva = délka směny + 4 h, aby staré zapomenuté
+// přihlášení neblokovalo nástup další den.
+async function openCheckIn(employeeId) {
+  const { rows } = await pool.query(
+    `SELECT id, event_type FROM attendance_logs
+      WHERE employee_id = $1
+      ORDER BY called_at DESC LIMIT 1`,
+    [employeeId]
+  );
+  const last = rows[0];
+  if (!last || last.event_type !== 'check_in') return null;
+  const { rows: fresh } = await pool.query(
+    `SELECT id FROM attendance_logs
+      WHERE id = $1
+        AND called_at + (hours || ' hours')::interval + interval '4 hours' > now()`,
+    [last.id]
+  );
+  return fresh[0] || null;
+}
+
 // Naplánovaný čas odhlášení = nejbližší očekávaný čas příchodu objektu (dnešní) + délka směny.
 // Pokud objekt nemá žádný rozvrh, vrátí NULL (odhlášení se pak nehlídá časově).
 async function computeExpectedCheckout(siteId, shiftHours) {
@@ -216,7 +238,9 @@ async function computeExpectedCheckout(siteId, shiftHours) {
 
 // Zapíše přihlášení. Na objektu s odhlašováním navíc uloží očekávaný čas odhlášení.
 async function doCheckIn(emp, site, callerNumber, callSid, twiml) {
-  const already = await isOnShift(emp.id);
+  // Objekt s odhlašováním: "přihlášen" = má otevřené přihlášení (dokud se neodhlásí).
+  // Objekt bez odhlašování: "přihlášen" = přihlášení do 12 h (auto-odhlášení jako dřív).
+  const already = site.requires_checkout ? await openCheckIn(emp.id) : await isOnShift(emp.id);
   if (already) {
     twiml.say(SAY, 'Jste již přihlášen ve službě.');
     twiml.hangup();
@@ -238,7 +262,9 @@ async function doCheckIn(emp, site, callerNumber, callSid, twiml) {
 
 // Zapíše odhlášení. Uzavře poslední otevřené přihlášení daného zaměstnance.
 async function doCheckOut(emp, site, twiml) {
-  const open = await isOnShift(emp.id);
+  // Odhlásit lze, dokud má člověk otevřené přihlášení – i po skončení směny (po 12 h),
+  // kdy už zmizel z přehledu. Proto openCheckIn, ne isOnShift.
+  const open = await openCheckIn(emp.id);
   if (!open) {
     twiml.say(SAY, 'Nejste přihlášen ve službě, odhlášení není možné. Na slyšenou.');
     twiml.hangup();
