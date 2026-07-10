@@ -203,44 +203,40 @@ async function openCheckIn(employeeId) {
 
 // Naplánovaný čas odhlášení = nejbližší očekávaný čas příchodu objektu (dnešní) + délka směny.
 // Pokud objekt nemá žádný rozvrh, vrátí NULL (odhlášení se pak nehlídá časově).
-async function computeExpectedCheckout(siteId, shiftHours) {
+// Vrátí čas nejbližšího dnešního odchodu (HH:MM), pokud je JEŠTĚ v budoucnu
+// (tj. odhlásit se zatím nemá). Když už nejbližší čas nastal (nebo objekt nemá
+// žádný dnešní čas odchodu), vrátí null → odhlášení je povoleno.
+async function checkoutTooEarly(siteId) {
   const { rows } = await pool.query(
-    `SELECT to_char(expected_time, 'HH24:MI') AS t FROM site_schedules
+    `SELECT to_char(expected_time, 'HH24:MI') AS t, dow FROM site_checkout_schedules
       WHERE site_id = $1 AND active = TRUE`,
     [siteId]
   );
+  if (rows.length === 0) return null; // bez času odchodu lze odhlásit kdykoli
 
-  // Objekt bez rozvrhu → zakotvíme na skutečný čas příchodu + délka směny,
-  // aby se odhlášení hlídalo i tam, kde není nastavený očekávaný čas příchodu.
-  if (rows.length === 0) {
-    const { rows: ts } = await pool.query(
-      `SELECT now() + ($1 || ' hours')::interval AS ts`, [shiftHours]
-    );
-    return ts[0]?.ts || null;
-  }
-
-  // Vybereme rozvrh nejbližší aktuálnímu času (ten, na který se člověk hlásí).
   const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Prague', hour12: false, hour: '2-digit', minute: '2-digit',
+    timeZone: 'Europe/Prague', hour12: false, hour: '2-digit', minute: '2-digit', weekday: 'short',
   }).formatToParts(new Date());
   const g = (t) => parts.find((p) => p.type === t)?.value;
   let nowH = parseInt(g('hour'), 10); if (nowH === 24) nowH = 0;
   const nowMin = nowH * 60 + parseInt(g('minute'), 10);
-  let best = null, bestDiff = Infinity;
+  const wk = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+  const today = wk[g('weekday')];
+
+  // Jen časy platné dnes (dle dnů). Najdeme nejbližší k aktuálnímu času.
+  let bestTime = null, bestDiff = Infinity;
   for (const r of rows) {
+    if (!String(r.dow || '').includes(String(today))) continue;
     const [h, m] = r.t.split(':').map(Number);
     const diff = Math.abs(h * 60 + m - nowMin);
-    if (diff < bestDiff) { bestDiff = diff; best = r.t; }
+    if (diff < bestDiff) { bestDiff = diff; bestTime = r.t; }
   }
+  if (!bestTime) return null; // dnes žádný čas odchodu → lze odhlásit
 
-  // expected_checkout = dnešní pražské datum v čase rozvrhu + délka směny (interval).
-  // Přičtení intervalu správně přeteče přes půlnoc: 20:00 + 12 h = 08:00 příštího dne.
-  const { rows: tsRows } = await pool.query(
-    `SELECT (((now() AT TIME ZONE 'Europe/Prague')::date + $1::time) AT TIME ZONE 'Europe/Prague')
-            + ($2 || ' hours')::interval AS ts`,
-    [best, shiftHours]
-  );
-  return tsRows[0]?.ts || null;
+  const [bh, bm] = bestTime.split(':').map(Number);
+  const bestMin = bh * 60 + bm;
+  // Nejbližší čas je v budoucnu → ještě ne (vrátíme ho pro hlášku). Jinak povolíme.
+  return bestMin > nowMin ? bestTime : null;
 }
 
 // Zapíše přihlášení. Na objektu s odhlašováním navíc uloží očekávaný čas odhlášení.
@@ -254,14 +250,11 @@ async function doCheckIn(emp, site, callerNumber, callSid, twiml) {
     return;
   }
   const shiftHours = emp.shift_hours || SHIFT_HOURS;
-  const expectedCheckout = site.requires_checkout
-    ? await computeExpectedCheckout(site.id, shiftHours)
-    : null;
   await pool.query(
     `INSERT INTO attendance_logs
-       (employee_id, site_id, event_type, caller_number, caller_verified, call_sid, hours, expected_checkout)
-     VALUES ($1, $2, 'check_in', $3, TRUE, $4, $5, $6)`,
-    [emp.id, site.id, callerNumber, callSid, shiftHours, expectedCheckout]
+       (employee_id, site_id, event_type, caller_number, caller_verified, call_sid, hours)
+     VALUES ($1, $2, 'check_in', $3, TRUE, $4, $5)`,
+    [emp.id, site.id, callerNumber, callSid, shiftHours]
   );
   twiml.say(SAY, `Děkujeme, ${emp.name}. Byli jste přihlášeni do služby na objektu ${site.name}. Přejeme klidnou směnu, na slyšenou.`);
   twiml.hangup();
@@ -274,6 +267,15 @@ async function doCheckOut(emp, site, twiml) {
   const open = await openCheckIn(emp.id);
   if (!open) {
     twiml.say(SAY, 'Nejste přihlášen ve službě, odhlášení není možné. Na slyšenou.');
+    twiml.hangup();
+    return;
+  }
+
+  // Pravidlo "dříve odejít nejde": vezmeme dnešní platné časy odchodu objektu
+  // a najdeme nejbližší k aktuálnímu času. Pokud je nejbližší v budoucnu → ještě ne.
+  const notYet = await checkoutTooEarly(site.id);
+  if (notYet) {
+    twiml.say(SAY, `Odhlášení zatím není možné. Odhlaste se prosím až v ${notYet} nebo později. Na slyšenou.`);
     twiml.hangup();
     return;
   }
@@ -370,7 +372,7 @@ app.get('/api/employees', requireAuth, async (_req, res) => {
 });
 app.post('/api/employees', requireAuth, async (req, res) => {
   const { name, phone, pin_code } = req.body;
-  const shift = Math.min(12, Math.max(1, parseInt(req.body.shift_hours, 10) || 12));
+  const shift = Math.min(24, Math.max(1, parseInt(req.body.shift_hours, 10) || 12));
   try {
     const { rows } = await pool.query(
       'INSERT INTO employees (name, phone, pin_code, shift_hours) VALUES ($1,$2,$3,$4) RETURNING *',
@@ -383,7 +385,7 @@ app.post('/api/employees', requireAuth, async (req, res) => {
 });
 app.put('/api/employees/:id', requireAuth, async (req, res) => {
   const { name, phone, pin_code, active } = req.body;
-  const shift = Math.min(12, Math.max(1, parseInt(req.body.shift_hours, 10) || 12));
+  const shift = Math.min(24, Math.max(1, parseInt(req.body.shift_hours, 10) || 12));
   const { rows } = await pool.query(
     'UPDATE employees SET name=$1, phone=$2, pin_code=$3, active=$4, shift_hours=$5 WHERE id=$6 RETURNING *',
     [name, phone || null, pin_code, active, shift, req.params.id]
@@ -407,7 +409,12 @@ app.get('/api/sites', requireAuth, async (_req, res) => {
                   FROM site_schedules sc WHERE sc.site_id = s.id), '[]') AS schedules,
       COALESCE((SELECT json_agg(json_build_object('id', ct.id, 'phone_number', ct.phone_number)
                                 ORDER BY ct.phone_number)
-                  FROM site_contacts ct WHERE ct.site_id = s.id), '[]') AS contacts
+                  FROM site_contacts ct WHERE ct.site_id = s.id), '[]') AS contacts,
+      COALESCE((SELECT json_agg(json_build_object('id', cs.id,
+                                'expected_time', to_char(cs.expected_time, 'HH24:MI'),
+                                'dow', cs.dow)
+                                ORDER BY cs.expected_time)
+                  FROM site_checkout_schedules cs WHERE cs.site_id = s.id), '[]') AS checkout_schedules
       FROM sites s
   ORDER BY s.name
   `);
@@ -474,6 +481,23 @@ app.post('/api/sites/:id/schedules', requireAuth, async (req, res) => {
 });
 app.delete('/api/schedules/:id', requireAuth, async (req, res) => {
   await pool.query('DELETE FROM site_schedules WHERE id = $1', [req.params.id]);
+  res.json({ ok: true });
+});
+
+// --- Očekávané ODCHODY (jen objekty s requires_checkout) ---
+app.post('/api/sites/:id/checkout-schedules', requireAuth, async (req, res) => {
+  const { expected_time, dow } = req.body;
+  if (!expected_time) return res.status(400).json({ error: 'Zadejte čas' });
+  const days = (dow || '1234567').toString().replace(/[^1-7]/g, '') || '1234567';
+  const { rows } = await pool.query(
+    `INSERT INTO site_checkout_schedules (site_id, expected_time, dow) VALUES ($1, $2, $3)
+     RETURNING id, to_char(expected_time, 'HH24:MI') AS expected_time, dow`,
+    [req.params.id, expected_time, days]
+  );
+  res.json(rows[0]);
+});
+app.delete('/api/checkout-schedules/:id', requireAuth, async (req, res) => {
+  await pool.query('DELETE FROM site_checkout_schedules WHERE id = $1', [req.params.id]);
   res.json({ ok: true });
 });
 
