@@ -119,3 +119,28 @@ CREATE TABLE IF NOT EXISTS checkout_alerts (
     UNIQUE (check_in_id, level)
 );
 CREATE INDEX IF NOT EXISTS idx_checkout_alerts_checkin ON checkout_alerts (check_in_id);
+
+-- ============================================================
+-- Očekávané ODCHODY (jen objekty s requires_checkout) – zrcadlo příchodů.
+-- Čas + dny, kdy se má provést odhlášení. Dříve se odhlásit nelze,
+-- +10 min po čase → hovor na objekt (level 1), +15 min → kontakty (level 2).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS site_checkout_schedules (
+    id            SERIAL PRIMARY KEY,
+    site_id       INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    expected_time TIME NOT NULL,
+    dow           TEXT NOT NULL DEFAULT '1234567',
+    active        BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_site_checkout_sched_site ON site_checkout_schedules (site_id);
+
+-- Evidence upozornění na chybějící odhlášení (aby se neopakovala).
+CREATE TABLE IF NOT EXISTS checkout_schedule_alerts (
+    id                    BIGSERIAL PRIMARY KEY,
+    checkout_schedule_id  INTEGER NOT NULL REFERENCES site_checkout_schedules(id) ON DELETE CASCADE,
+    alert_date            DATE NOT NULL,
+    level                 SMALLINT NOT NULL,
+    sent_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (checkout_schedule_id, alert_date, level)
+);
