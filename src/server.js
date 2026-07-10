@@ -209,29 +209,36 @@ async function computeExpectedCheckout(siteId, shiftHours) {
       WHERE site_id = $1 AND active = TRUE`,
     [siteId]
   );
-  if (rows.length === 0) return null;
-  // Aktuální čas v Praze (minuty od půlnoci) pro výběr nejbližšího rozvrhu.
+
+  // Objekt bez rozvrhu → zakotvíme na skutečný čas příchodu + délka směny,
+  // aby se odhlášení hlídalo i tam, kde není nastavený očekávaný čas příchodu.
+  if (rows.length === 0) {
+    const { rows: ts } = await pool.query(
+      `SELECT now() + ($1 || ' hours')::interval AS ts`, [shiftHours]
+    );
+    return ts[0]?.ts || null;
+  }
+
+  // Vybereme rozvrh nejbližší aktuálnímu času (ten, na který se člověk hlásí).
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Europe/Prague', hour12: false, hour: '2-digit', minute: '2-digit',
   }).formatToParts(new Date());
   const g = (t) => parts.find((p) => p.type === t)?.value;
   let nowH = parseInt(g('hour'), 10); if (nowH === 24) nowH = 0;
   const nowMin = nowH * 60 + parseInt(g('minute'), 10);
-  // Vybereme rozvrh, jehož čas je nejblíž aktuálnímu (ten, na který se člověk hlásí).
   let best = null, bestDiff = Infinity;
   for (const r of rows) {
     const [h, m] = r.t.split(':').map(Number);
     const diff = Math.abs(h * 60 + m - nowMin);
     if (diff < bestDiff) { bestDiff = diff; best = r.t; }
   }
-  // expected_checkout = dnešní datum (Praha) v čase (rozvrh + shiftHours), jako TIMESTAMPTZ.
-  const [bh, bm] = best.split(':').map(Number);
-  const endMin = bh * 60 + bm + shiftHours * 60;
-  const endStr = `${String(Math.floor((endMin / 60) % 24)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
-  // Pomocí SQL převedeme "dnešní pražské datum + čas" na správný TIMESTAMPTZ (řeší i přesah přes půlnoc jen zhruba).
+
+  // expected_checkout = dnešní pražské datum v čase rozvrhu + délka směny (interval).
+  // Přičtení intervalu správně přeteče přes půlnoc: 20:00 + 12 h = 08:00 příštího dne.
   const { rows: tsRows } = await pool.query(
-    `SELECT ((now() AT TIME ZONE 'Europe/Prague')::date + $1::time) AT TIME ZONE 'Europe/Prague' AS ts`,
-    [endStr]
+    `SELECT (((now() AT TIME ZONE 'Europe/Prague')::date + $1::time) AT TIME ZONE 'Europe/Prague')
+            + ($2 || ' hours')::interval AS ts`,
+    [best, shiftHours]
   );
   return tsRows[0]?.ts || null;
 }
