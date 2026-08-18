@@ -100,7 +100,7 @@ export default function Employees() {
           <div className="f"><label>Osobní číslo (PIN)</label>
             <input value={emp.pin_code} onChange={(e) => setEmp({ ...emp, pin_code: e.target.value })} /></div>
           <div className="f"><label>Směna (hod)</label>
-            <input type="number" min="1" max="12" style={{ width: 90 }} value={emp.shift_hours}
+            <input type="number" min="1" max="24" style={{ width: 90 }} value={emp.shift_hours}
               onChange={(e) => setEmp({ ...emp, shift_hours: e.target.value })} /></div>
           <button className="btn-primary" onClick={addEmployee}>Přidat</button>
         </div>
@@ -122,7 +122,7 @@ export default function Employees() {
                     onChange={(ev) => setEditVals({ ...editVals, pin_code: ev.target.value })} /></td>
                   <td><input value={editVals.phone} placeholder="+420…"
                     onChange={(ev) => setEditVals({ ...editVals, phone: ev.target.value })} /></td>
-                  <td><input type="number" min="1" max="12" style={{ width: 70 }} value={editVals.shift_hours}
+                  <td><input type="number" min="1" max="24" style={{ width: 70 }} value={editVals.shift_hours}
                     onChange={(ev) => setEditVals({ ...editVals, shift_hours: ev.target.value })} /></td>
                   <td>
                     <span className={`badge ${e.active ? 'ok' : 'warn'}`}>

@@ -19,6 +19,8 @@ export default function Shifts() {
   const [timeInputs, setTimeInputs] = useState({});   // {siteId: 'HH:MM'}
   const [dowInputs, setDowInputs] = useState({});      // {siteId: '12345'}
   const [contactInputs, setContactInputs] = useState({}); // {siteId: '+420…'}
+  const [coTimeInputs, setCoTimeInputs] = useState({});   // odchody: {siteId: 'HH:MM'}
+  const [coDowInputs, setCoDowInputs] = useState({});     // odchody: {siteId: '12345'}
 
   const loadSites = () => api.sites().then(setSites).catch(() => {});
   const loadAlerts = () => api.scheduleAlerts().then(setAlerts).catch(() => {});
@@ -30,6 +32,30 @@ export default function Shifts() {
     const set = new Set(getDow(siteId).split(''));
     if (set.has(d)) set.delete(d); else set.add(d);
     setDowInputs({ ...dowInputs, [siteId]: [...set].sort().join('') });
+  }
+
+  const getCoDow = (siteId) => (coDowInputs[siteId] ?? '1234567');
+  function toggleCoDow(siteId, d) {
+    const set = new Set(getCoDow(siteId).split(''));
+    if (set.has(d)) set.delete(d); else set.add(d);
+    setCoDowInputs({ ...coDowInputs, [siteId]: [...set].sort().join('') });
+  }
+  async function addCheckoutTime(siteId) {
+    setErr('');
+    const t = coTimeInputs[siteId];
+    if (!t) { setErr('Zadejte čas odchodu.'); return; }
+    const dow = getCoDow(siteId);
+    if (!dow) { setErr('Vyberte aspoň jeden den.'); return; }
+    try {
+      await api.addCheckoutSchedule(siteId, { expected_time: t, dow });
+      setCoTimeInputs({ ...coTimeInputs, [siteId]: '' });
+      setCoDowInputs({ ...coDowInputs, [siteId]: '1234567' });
+      loadSites();
+    } catch (e) { setErr(e.message); }
+  }
+  async function deleteCheckoutTime(id) {
+    await api.deleteCheckoutSchedule(id);
+    loadSites();
   }
 
   async function addSite() {
@@ -142,6 +168,41 @@ export default function Shifts() {
               <button className="btn-ghost" onClick={() => addTime(s.id)}>Přidat čas</button>
             </div>
           </div>
+
+          {/* Očekávané odchody – jen objekty s vyžadovaným odhlášením */}
+          {s.requires_checkout && (
+            <div style={{ marginTop: 12 }}>
+              <strong>Očekávané odchody</strong>{' '}
+              <span style={{ color: 'var(--muted)', fontSize: 13 }}>(dříve se odhlásit nelze; +10 min hovor na objekt, +15 min na kontakty)</span>
+              <div style={{ margin: '8px 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {(s.checkout_schedules || []).length === 0 && (
+                  <span style={{ color: 'var(--muted)', fontSize: 13 }}>Žádné časy odchodu – odhlášení lze kdykoli, neodhlášení se nehlídá.</span>
+                )}
+                {(s.checkout_schedules || []).map((cs) => (
+                  <span key={cs.id} className="badge warn" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, width: 'fit-content' }}>
+                    <strong>{cs.expected_time}</strong> · {dowText(cs.dow)}
+                    <span style={{ cursor: 'pointer', fontWeight: 700 }} onClick={() => deleteCheckoutTime(cs.id)}>×</span>
+                  </span>
+                ))}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                <input type="time" style={{ width: 120 }}
+                  value={coTimeInputs[s.id] || ''}
+                  onChange={(e) => setCoTimeInputs({ ...coTimeInputs, [s.id]: e.target.value })} />
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {DAYS.map(([d, label]) => {
+                    const on = getCoDow(s.id).includes(d);
+                    return (
+                      <span key={d} onClick={() => toggleCoDow(s.id, d)}
+                        className={`badge ${on ? 'ok' : 'warn'}`}
+                        style={{ cursor: 'pointer', userSelect: 'none' }}>{label}</span>
+                    );
+                  })}
+                </div>
+                <button className="btn-ghost" onClick={() => addCheckoutTime(s.id)}>Přidat čas odchodu</button>
+              </div>
+            </div>
+          )}
 
           {/* Čísla pobočky – 1. hovor (+10 min) */}
           <div style={{ marginTop: 16 }}>

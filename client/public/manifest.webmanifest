@@ -1,0 +1,17 @@
+{
+  "name": "Docházkový systém B+H",
+  "short_name": "Docházka B+H",
+  "description": "Docházkový systém ostrahy objektů B+H",
+  "lang": "cs",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#111113",
+  "theme_color": "#111113",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

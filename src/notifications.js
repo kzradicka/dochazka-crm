@@ -155,69 +155,81 @@ async function checkSiteSchedules() {
   }
 }
 
-// Hlídání CHYBĚJÍCÍHO ODHLÁŠENÍ – jen objekty s requires_checkout.
-// Pro každé otevřené přihlášení (poslední událost = check_in) s vyplněným expected_checkout:
-//   +10 min po expected_checkout → hovor na čísla objektu (level 1),
-//   +15 min po expected_checkout → hovor na kontaktní čísla (level 2).
-// Otevřené = zaměstnanec se dosud neodhlásil (nemá novější check_out).
+// Hlídání CHYBĚJÍCÍHO ODHLÁŠENÍ – zrcadlo hlídání příchodů, ale nad časy ODCHODU.
+// Pro každý dnešní platný čas odchodu objektu (site_checkout_schedules):
+//   pokud v okně [čas − 60 min, teď] nikdo neprovedl check_out,
+//   +10 min po čase → hovor na čísla objektu (level 1),
+//   +15 min po čase → hovor na kontaktní čísla (level 2).
 async function checkMissingCheckouts() {
-  // Najdeme aktuálně otevřená přihlášení na objektech s odhlašováním, po očekávaném konci.
-  const { rows: open } = await pool.query(`
-    WITH last_event AS (
-      SELECT DISTINCT ON (l.employee_id)
-             l.id, l.employee_id, l.event_type, l.site_id, l.expected_checkout
-        FROM attendance_logs l
-       ORDER BY l.employee_id, l.called_at DESC
-    )
-    SELECT le.id AS check_in_id, le.site_id, le.expected_checkout,
-           s.name AS site_name,
-           EXTRACT(EPOCH FROM (now() - le.expected_checkout)) / 60 AS elapsed_min
-      FROM last_event le
-      JOIN sites s ON s.id = le.site_id
-     WHERE le.event_type = 'check_in'
-       AND s.requires_checkout = TRUE
-       AND le.expected_checkout IS NOT NULL
-       AND now() >= le.expected_checkout + interval '10 minutes'
+  const { dateISO, minutesOfDay, dow } = pragueNow();
+
+  const { rows: schedules } = await pool.query(`
+    SELECT cs.id, cs.site_id, to_char(cs.expected_time, 'HH24:MI') AS expected_time,
+           cs.dow, s.name AS site_name
+      FROM site_checkout_schedules cs
+      JOIN sites s ON s.id = cs.site_id
+     WHERE cs.active = TRUE AND s.requires_checkout = TRUE
   `);
 
-  for (const r of open) {
-    const elapsed = Number(r.elapsed_min);
-    if (elapsed > 240) continue; // příliš staré – neřešíme (ochrana proti starým záznamům)
+  for (const cs of schedules) {
+    if (!String(cs.dow || '').includes(String(dow))) continue;
+
+    const [eh, em] = cs.expected_time.split(':').map(Number);
+    const expectedMin = eh * 60 + em;
+    const elapsed = minutesOfDay - expectedMin;
+
+    if (elapsed < 10) continue;   // ještě nenastal čas 1. eskalace
+    if (elapsed > 240) continue;  // příliš staré – neřešíme
+
+    // Odhlásil se dnes někdo na objektu v okně [čas odchodu − 60 min, teď]?
+    const windowStart = minToTime(Math.max(0, expectedMin - 60));
+    const { rows: chk } = await pool.query(
+      `SELECT 1 FROM attendance_logs
+        WHERE site_id = $1 AND event_type = 'check_out'
+          AND (called_at AT TIME ZONE 'Europe/Prague')::date = $2::date
+          AND (called_at AT TIME ZONE 'Europe/Prague')::time >= $3::time
+        LIMIT 1`,
+      [cs.site_id, dateISO, windowStart]
+    );
+    if (chk.length > 0) continue; // někdo se odhlásil → žádné upozornění
 
     // 1. eskalace (+10 min): hovor na čísla objektu
-    const already1 = await pool.query(
-      'SELECT 1 FROM checkout_alerts WHERE check_in_id = $1 AND level = 1 LIMIT 1', [r.check_in_id]
-    );
-    if (elapsed >= 10 && already1.rows.length === 0) {
+    if (elapsed >= 10 && !(await checkoutAlertSent(cs.id, dateISO, 1))) {
       const { rows: phones } = await pool.query(
-        'SELECT phone_number FROM site_phones WHERE site_id = $1', [r.site_id]
+        'SELECT phone_number FROM site_phones WHERE site_id = $1', [cs.site_id]
       );
-      await pool.query(
-        'INSERT INTO checkout_alerts (check_in_id, level) VALUES ($1, 1) ON CONFLICT DO NOTHING',
-        [r.check_in_id]
-      );
-      const message = `Dobrý den, docházkový systém B plus H zaznamenal, že na objektu ${r.site_name} nebylo provedeno odhlášení ze služby. Odhlaste se prosím ihned na lince docházkového systému. Na slyšenou.`;
-      console.log(`Odhlášení – hovor 1 (objekt) zahájen: ${r.site_name}`);
+      await recordCheckoutAlert(cs.id, dateISO, 1);
+      const message = `Dobrý den, docházkový systém B plus H zaznamenal, že na objektu ${cs.site_name} nebylo provedeno odhlášení ze služby. Odhlaste se prosím ihned na lince docházkového systému. Na slyšenou.`;
+      console.log(`Odhlášení – hovor 1 (objekt) zahájen: ${cs.site_name} ${cs.expected_time}`);
       await callSequentially(phones.map((p) => p.phone_number), message);
     }
 
     // 2. eskalace (+15 min): hovor na kontaktní čísla
-    const already2 = await pool.query(
-      'SELECT 1 FROM checkout_alerts WHERE check_in_id = $1 AND level = 2 LIMIT 1', [r.check_in_id]
-    );
-    if (elapsed >= 15 && already2.rows.length === 0) {
+    if (elapsed >= 15 && !(await checkoutAlertSent(cs.id, dateISO, 2))) {
       const { rows: contacts } = await pool.query(
-        'SELECT phone_number FROM site_contacts WHERE site_id = $1', [r.site_id]
+        'SELECT phone_number FROM site_contacts WHERE site_id = $1', [cs.site_id]
       );
-      await pool.query(
-        'INSERT INTO checkout_alerts (check_in_id, level) VALUES ($1, 2) ON CONFLICT DO NOTHING',
-        [r.check_in_id]
-      );
-      const message = `Dobrý den, varování. Na objektu ${r.site_name} se strážný po skončení směny neodhlásil ze služby. Prověřte prosím ihned objekt ${r.site_name}. Děkuji.`;
-      console.log(`Odhlášení – hovor 2 (kontakty) zahájen: ${r.site_name}`);
+      await recordCheckoutAlert(cs.id, dateISO, 2);
+      const message = `Dobrý den, varování. Na objektu ${cs.site_name} se strážný po skončení směny neodhlásil ze služby. Prověřte prosím ihned objekt ${cs.site_name}. Děkuji.`;
+      console.log(`Odhlášení – hovor 2 (kontakty) zahájen: ${cs.site_name} ${cs.expected_time}`);
       await callSequentially(contacts.map((c) => c.phone_number), message);
     }
   }
+}
+
+async function checkoutAlertSent(scheduleId, dateISO, level) {
+  const { rows } = await pool.query(
+    'SELECT 1 FROM checkout_schedule_alerts WHERE checkout_schedule_id = $1 AND alert_date = $2 AND level = $3 LIMIT 1',
+    [scheduleId, dateISO, level]
+  );
+  return rows.length > 0;
+}
+async function recordCheckoutAlert(scheduleId, dateISO, level) {
+  await pool.query(
+    `INSERT INTO checkout_schedule_alerts (checkout_schedule_id, alert_date, level)
+     VALUES ($1, $2, $3) ON CONFLICT (checkout_schedule_id, alert_date, level) DO NOTHING`,
+    [scheduleId, dateISO, level]
+  );
 }
 
 // Spustí hlídání každou minutu.

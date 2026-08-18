@@ -81,6 +81,9 @@ export default function History() {
     // Jeden den = jedna směna daného typu (víc nahlášení téhož typu se nezdvojuje).
     const emps = new Map(); // pin_code → { name, days: Map(day → {hasD,hasN,hoursD,hoursN}) }
     for (const r of rows) {
+      // Do výkazu jdou jen příchody. Odchody (check_out) slouží jen k potvrzení
+      // přítomnosti, do docházky se nepromítají.
+      if (r.event_type === 'check_out') continue;
       const t = pragueParts(r.called_at);
       const type = shiftType(t.hour);
       if (!emps.has(r.pin_code)) emps.set(r.pin_code, { name: r.employee, days: new Map() });
