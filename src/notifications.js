@@ -159,10 +159,10 @@ async function checkSiteSchedules() {
 // Hlídá se PO OSOBÁCH: každé otevřené přihlášení na objektu s odhlašováním,
 // které má uložený očekávaný čas odchodu (expected_checkout).
 //   +5 min po čase odchodu  → připomínka na čísla objektu (strážný má telefon u sebe),
-//   +15 min po čase odchodu → eskalace na kontaktní čísla vedení.
+//   +10 min po čase odchodu → eskalace na kontaktní čísla vedení.
 // Přijdou dva, hlídají se dva; odhlásí-li se jeden, druhý dostane upozornění dál.
 const CHECKOUT_REMIND_MIN   = 5;   // kolik minut PO čase odchodu připomenout na objekt
-const CHECKOUT_ESCALATE_MIN = 15;  // kolik minut PO čase odchodu eskalovat na vedení
+const CHECKOUT_ESCALATE_MIN = 10;  // kolik minut PO čase odchodu eskalovat na vedení
 
 async function checkMissingCheckouts() {
   // Otevřená přihlášení = po nich nenásleduje žádné odhlášení téhož zaměstnance.
@@ -202,7 +202,7 @@ async function checkMissingCheckouts() {
       await callSequentially(phones.map((p) => p.phone_number), message);
     }
 
-    // 2) Eskalace 15 minut po konci směny – na kontaktní čísla vedení.
+    // 2) Eskalace 10 minut po konci směny – na kontaktní čísla vedení.
     if (o.escalate_due && !o.checkout_alert2_at) {
       const { rows: contacts } = await pool.query(
         'SELECT phone_number FROM site_contacts WHERE site_id = $1', [o.site_id]

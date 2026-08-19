@@ -193,7 +193,7 @@ export default function Shifts() {
               <strong>Očekávané odchody</strong>{' '}
               <span style={{ color: 'var(--muted)', fontSize: 13 }}>
                 (odhlásit lze nejdřív 10 min předem; 5 min po konci připomínka na objekt,
-                15 min po konci eskalace na kontakty)
+                10 min po konci eskalace na kontakty)
               </span>
               <div className="note-box">
                 <strong>Noční směny:</strong> čas odchodu se zadává na den, kdy se
