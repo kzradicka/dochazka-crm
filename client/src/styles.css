@@ -222,7 +222,9 @@ select { cursor: pointer; }
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 12px;
+  margin-bottom: 22px;   /* odstup od tabulky pod filtry */
 }
+.filters:last-child, .row-form:last-child { margin-bottom: 0; }
 .filters .f, .row-form .f { flex: 1 1 180px; min-width: 150px; }
 
 /* Tlačítka u filtrů tvoří vlastní řádek pod poli, zarovnaný zleva
@@ -437,6 +439,7 @@ td input, td select { padding: 6px 8px; }
 .app.view-mobile .filters .btn-primary, .app.view-mobile .filters .btn-ghost,
 .app.view-mobile .row-form .btn-primary, .app.view-mobile .row-form .btn-ghost { flex: 1 1 100%; }
 .app.view-mobile .filters .actions, .app.view-mobile .row-form .actions { padding-top: 12px; }
+.app.view-mobile .filters, .app.view-mobile .row-form { margin-bottom: 16px; }
 .app.view-mobile .card table { display: block; overflow-x: auto; white-space: nowrap; }
 
 @media (max-width: 820px) {
@@ -469,6 +472,7 @@ td input, td select { padding: 6px 8px; }
   .app.view-auto .filters .btn-primary, .app.view-auto .filters .btn-ghost,
   .app.view-auto .row-form .btn-primary, .app.view-auto .row-form .btn-ghost { flex: 1 1 100%; }
   .app.view-auto .filters .actions, .app.view-auto .row-form .actions { padding-top: 12px; }
+  .app.view-auto .filters, .app.view-auto .row-form { margin-bottom: 16px; }
   .app.view-auto .card table { display: block; overflow-x: auto; white-space: nowrap; }
 }
 
