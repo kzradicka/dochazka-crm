@@ -158,18 +158,18 @@ async function checkSiteSchedules() {
 // Hlídání CHYBĚJÍCÍHO ODHLÁŠENÍ – zrcadlo hlídání příchodů, ale nad časy ODCHODU.
 // Hlídá se PO OSOBÁCH: každé otevřené přihlášení na objektu s odhlašováním,
 // které má uložený očekávaný čas odchodu (expected_checkout).
-//   −5 min před časem odchodu → připomínka na čísla objektu (strážný má telefon u sebe),
-//   +5 min po čase odchodu    → eskalace na kontaktní čísla vedení.
+//   +5 min po čase odchodu  → připomínka na čísla objektu (strážný má telefon u sebe),
+//   +15 min po čase odchodu → eskalace na kontaktní čísla vedení.
 // Přijdou dva, hlídají se dva; odhlásí-li se jeden, druhý dostane upozornění dál.
-const CHECKOUT_REMIND_MIN   = 5;  // kolik minut PŘED časem odchodu připomenout
-const CHECKOUT_ESCALATE_MIN = 5;  // kolik minut PO čase odchodu eskalovat na vedení
+const CHECKOUT_REMIND_MIN   = 5;   // kolik minut PO čase odchodu připomenout na objekt
+const CHECKOUT_ESCALATE_MIN = 15;  // kolik minut PO čase odchodu eskalovat na vedení
 
 async function checkMissingCheckouts() {
   // Otevřená přihlášení = po nich nenásleduje žádné odhlášení téhož zaměstnance.
   const { rows: open } = await pool.query(
     `SELECT l.id, l.site_id, e.name AS employee, s.name AS site_name,
             to_char(l.expected_checkout AT TIME ZONE 'Europe/Prague', 'HH24:MI') AS expected_time,
-            (now() >= l.expected_checkout - ($1 || ' minutes')::interval) AS remind_due,
+            (now() >= l.expected_checkout + ($1 || ' minutes')::interval) AS remind_due,
             (now() >= l.expected_checkout + ($2 || ' minutes')::interval) AS escalate_due,
             l.checkout_alert1_at, l.checkout_alert2_at
        FROM attendance_logs l
@@ -190,19 +190,19 @@ async function checkMissingCheckouts() {
   );
 
   for (const o of open) {
-    // 1) Připomínka 5 minut před koncem směny – na čísla objektu.
+    // 1) Připomínka 5 minut po konci směny – na čísla objektu.
     if (o.remind_due && !o.checkout_alert1_at) {
       const { rows: phones } = await pool.query(
         'SELECT phone_number FROM site_phones WHERE site_id = $1', [o.site_id]
       );
       // Zamkneme hned, obvolání může trvat déle než interval hlídání.
       await pool.query('UPDATE attendance_logs SET checkout_alert1_at = now() WHERE id = $1', [o.id]);
-      const message = `Dobrý den, ${o.employee}. Blíží se konec vaší směny na objektu ${o.site_name} v ${o.expected_time}. Nezapomeňte se odhlásit ze služby na lince docházkového systému. Na slyšenou.`;
+      const message = `Dobrý den, ${o.employee}. Vaše směna na objektu ${o.site_name} skončila v ${o.expected_time} a dosud jste se neodhlásil ze služby. Odhlaste se prosím ihned na lince docházkového systému. Na slyšenou.`;
       console.log(`Odhlášení – připomínka (objekt) zahájena: ${o.site_name} / ${o.employee} ${o.expected_time}`);
       await callSequentially(phones.map((p) => p.phone_number), message);
     }
 
-    // 2) Eskalace 5 minut po konci směny – na kontaktní čísla vedení.
+    // 2) Eskalace 15 minut po konci směny – na kontaktní čísla vedení.
     if (o.escalate_due && !o.checkout_alert2_at) {
       const { rows: contacts } = await pool.query(
         'SELECT phone_number FROM site_contacts WHERE site_id = $1', [o.site_id]
