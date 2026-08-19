@@ -10,7 +10,7 @@ const TABS = [
   { id: 'live', label: 'Kdo je ve službě', C: OnSite },
   { id: 'history', label: 'Historie docházky', C: History },
   { id: 'employees', label: 'Zaměstnanci a objekty', C: Employees },
-  { id: 'shifts', label: 'Směny a hlídání', C: Shifts },
+  { id: 'shifts', label: 'Směny, příchody a odchody', C: Shifts },
 ];
 
 /* Přepínač zobrazení: automaticky podle šířky okna, nebo ručně.

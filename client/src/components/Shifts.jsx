@@ -40,6 +40,14 @@ export default function Shifts() {
     if (set.has(d)) set.delete(d); else set.add(d);
     setCoDowInputs({ ...coDowInputs, [siteId]: [...set].sort().join('') });
   }
+  async function toggleCheckout(s) {
+    setErr('');
+    try {
+      await api.updateSite(s.id, { requires_checkout: !s.requires_checkout });
+      loadSites();
+    } catch (e) { setErr(e.message || 'Změnu se nepodařilo uložit.'); }
+  }
+
   async function addCheckoutTime(siteId) {
     setErr('');
     const t = coTimeInputs[siteId];
@@ -108,13 +116,15 @@ export default function Shifts() {
 
   return (
     <div>
-      <h2>Směny a hlídání příchodů</h2>
+      <h2>Směny a hlídání příchodů a odchodů</h2>
 
       <div className="card">
         <p style={{ marginTop: 0, color: 'var(--muted)' }}>
-          U každé pobočky nastavte očekávané časy příchodu a dny, kdy platí. Pokud se na pobočce
-          nikdo nenahlásí osobním kódem, systém po <strong>10 minutách</strong> zavolá na čísla
-          pobočky a po <strong>15 minutách</strong> na kontaktní čísla (automat přehraje hlášku).
+          U každého objektu nastavte očekávané časy <strong>příchodu</strong> a dny, kdy platí.
+          Pokud se nikdo nenahlásí osobním kódem, systém po <strong>10 minutách</strong> zavolá
+          na čísla objektu a po <strong>15 minutách</strong> na kontaktní čísla.
+          {' '}U vybraných objektů lze navíc zapnout <strong>hlídání odchodu</strong> – strážný
+          se musí na konci směny telefonicky odhlásit.
         </p>
         {err && <div className="err">{err}</div>}
         <div className="row-form">
@@ -169,11 +179,27 @@ export default function Shifts() {
             </div>
           </div>
 
-          {/* Očekávané odchody – jen objekty s vyžadovaným odhlášením */}
+          {/* Hlídání odchodu – přepínač + časy (dřív bylo v „Zaměstnanci a objekty“) */}
+          <label className="checkout-toggle">
+            <input type="checkbox" checked={!!s.requires_checkout} onChange={() => toggleCheckout(s)} />
+            <span>
+              <strong>Hlídat i odchod</strong> – na konci směny se zaměstnanec musí telefonicky
+              odhlásit (IVR: 1 = přihlášení, 2 = odhlášení), jinak přijde upozornění.
+            </span>
+          </label>
+
           {s.requires_checkout && (
             <div style={{ marginTop: 12 }}>
               <strong>Očekávané odchody</strong>{' '}
-              <span style={{ color: 'var(--muted)', fontSize: 13 }}>(dříve se odhlásit nelze; +10 min hovor na objekt, +15 min na kontakty)</span>
+              <span style={{ color: 'var(--muted)', fontSize: 13 }}>
+                (odhlásit lze nejdřív 10 min předem; 5 min před koncem připomínka na objekt,
+                5 min po konci eskalace na kontakty)
+              </span>
+              <div className="note-box">
+                <strong>Noční směny:</strong> čas odchodu se zadává na den, kdy se
+                <em> odchází</em>. Nástup v pondělí 18:30 s odchodem v 6:30 ráno znamená
+                čas <strong>6:30</strong> zaškrtnutý na <strong>úterý</strong>.
+              </div>
               <div style={{ margin: '8px 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {(s.checkout_schedules || []).length === 0 && (
                   <span style={{ color: 'var(--muted)', fontSize: 13 }}>Žádné časy odchodu – odhlášení lze kdykoli, neodhlášení se nehlídá.</span>

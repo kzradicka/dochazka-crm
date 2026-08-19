@@ -80,11 +80,6 @@ export default function Employees() {
     loadSites();
   }
 
-  async function toggleCheckout(s) {
-    await api.updateSite(s.id, { requires_checkout: !s.requires_checkout });
-    loadSites();
-  }
-
   return (
     <div>
       <h2>Zaměstnanci a objekty</h2>
@@ -184,10 +179,6 @@ export default function Employees() {
               </div>
               <button className="btn-ghost" onClick={() => deleteSite(s.id)}>Smazat objekt</button>
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0', fontSize: 14, cursor: 'pointer' }}>
-              <input type="checkbox" checked={!!s.requires_checkout} onChange={() => toggleCheckout(s)} />
-              Vyžadovat i odhlášení (telefonicky) – na konci směny se strážný musí odhlásit, jinak přijde eskalace
-            </label>
             <div style={{ margin: '8px 0', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {(s.phones || []).length === 0 && (
                 <span style={{ color: 'var(--muted)', fontSize: 13 }}>Žádná čísla – zatím se na tento objekt nelze hlásit.</span>
