@@ -102,10 +102,10 @@ a  { color: var(--gold); text-decoration: none; }
 }
 .brand::before {
   content: "";
-  width: 76px;
-  height: 92px;
-  background: url("/icons/mark.png") center / contain no-repeat;
-  filter: drop-shadow(0 6px 14px rgba(0,0,0,0.5));
+  width: 84px;
+  height: 102px;
+  background: url("/icons/logo-bh.png") center / contain no-repeat;
+  filter: drop-shadow(0 6px 14px rgba(0,0,0,0.55));
 }
 .brand::after {
   content: "Docházkový systém";
@@ -361,11 +361,11 @@ td input, td select { padding: 7px 9px; }
 .login-card::before {
   content: "";
   display: block;
-  width: 88px;
-  height: 106px;
-  margin: 0 auto 14px;
-  background: url("/icons/mark.png") center / contain no-repeat;
-  filter: drop-shadow(0 8px 18px rgba(0,0,0,0.55));
+  width: 112px;
+  height: 136px;
+  margin: 0 auto 16px;
+  background: url("/icons/logo-bh.png") center / contain no-repeat;
+  filter: drop-shadow(0 8px 20px rgba(0,0,0,0.6));
 }
 .login-card h1 { font-size: 22px; margin: 0 0 4px; }
 .login-card p  { margin: 0 0 20px; color: var(--muted); }
@@ -403,7 +403,7 @@ td input, td select { padding: 7px 9px; }
     padding: 2px 4px 12px;
     margin-bottom: 2px;
   }
-  .brand::before { width: 34px; height: 42px; }
+  .brand::before { width: 38px; height: 46px; }
   .brand::after { font-size: 15px; }
 
   .sidebar nav {
