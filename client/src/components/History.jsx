@@ -168,9 +168,11 @@ export default function History() {
               {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
-          <button className="btn-primary" onClick={load}>Filtrovat</button>
-          <button className="btn-ghost" onClick={exportXlsx} disabled={!rows.length}>Export do Excelu</button>
-          <button className="btn-ghost" onClick={exportPrehled} disabled={!rows.length}>Export přehledu</button>
+          <div className="actions">
+            <button className="btn-primary" onClick={load}>Filtrovat</button>
+            <button className="btn-ghost" onClick={exportXlsx} disabled={!rows.length}>Export do Excelu</button>
+            <button className="btn-ghost" onClick={exportPrehled} disabled={!rows.length}>Export přehledu</button>
+          </div>
         </div>
 
         {loading ? (
