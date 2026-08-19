@@ -144,3 +144,9 @@ CREATE TABLE IF NOT EXISTS checkout_schedule_alerts (
     sent_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (checkout_schedule_id, alert_date, level)
 );
+
+-- Hlídání odchodů PO OSOBÁCH (dřív se hlídalo jen po objektech).
+-- Značky, kdy odešla připomínka (−5 min) a eskalace (+5 min) k danému přihlášení,
+-- aby se hovory neopakovaly každou minutu.
+ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS checkout_alert1_at TIMESTAMPTZ;
+ALTER TABLE attendance_logs ADD COLUMN IF NOT EXISTS checkout_alert2_at TIMESTAMPTZ;

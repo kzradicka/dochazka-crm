@@ -16,12 +16,22 @@ export default function OnSite() {
     return () => clearInterval(t);
   }, []);
 
+  const overdueCount = rows.filter((r) => r.overdue).length;
+
   return (
     <div>
       <h2>Kdo je právě ve službě</h2>
       <div className="card">
         <div className="toolbar">
-          <div><span className="live-dot" />Živý přehled (obnova každých 30 s) · automatické odhlášení po 12 h</div>
+          <div>
+            <span className="live-dot" />
+            Živý přehled (obnova každých 30 s)
+            {overdueCount > 0 && (
+              <span className="badge warn" style={{ marginLeft: 10 }}>
+                {overdueCount === 1 ? '1 neodhlášený' : `${overdueCount} neodhlášení`}
+              </span>
+            )}
+          </div>
           <button className="btn-ghost" onClick={load}>Obnovit</button>
         </div>
         {loading ? (
@@ -31,16 +41,34 @@ export default function OnSite() {
         ) : (
           <table>
             <thead>
-              <tr><th>Zaměstnanec</th><th>Os. číslo</th><th>Objekt</th><th>Přihlášen od</th><th>Automaticky odhlášen</th></tr>
+              <tr>
+                <th>Zaměstnanec</th><th>Os. číslo</th><th>Objekt</th>
+                <th>Přihlášen od</th><th>Odchod</th>
+              </tr>
             </thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={i}>
+                <tr key={i} className={r.overdue ? 'row-overdue' : ''}>
                   <td>{r.employee}</td>
                   <td>{r.pin_code}</td>
                   <td>{r.site || '—'}</td>
                   <td>{fmtDateTime(r.since)}</td>
-                  <td>{fmtDateTime(r.until)}</td>
+                  <td>
+                    {r.until ? (
+                      r.overdue ? (
+                        <span className="badge warn">Neodhlášeno od {fmtDateTime(r.until)}</span>
+                      ) : (
+                        <>
+                          {fmtDateTime(r.until)}
+                          {r.requires_checkout && (
+                            <span className="hint-note"> · odhlásí se sám</span>
+                          )}
+                        </>
+                      )
+                    ) : (
+                      r.requires_checkout ? <span className="hint-note">bez rozvrhu odchodů</span> : '—'
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

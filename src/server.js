@@ -185,7 +185,7 @@ async function isOnShift(employeeId) {
 // přihlášení neblokovalo nástup další den.
 async function openCheckIn(employeeId) {
   const { rows } = await pool.query(
-    `SELECT id, event_type FROM attendance_logs
+    `SELECT id, event_type, expected_checkout FROM attendance_logs
       WHERE employee_id = $1
       ORDER BY called_at DESC LIMIT 1`,
     [employeeId]
@@ -193,7 +193,7 @@ async function openCheckIn(employeeId) {
   const last = rows[0];
   if (!last || last.event_type !== 'check_in') return null;
   const { rows: fresh } = await pool.query(
-    `SELECT id FROM attendance_logs
+    `SELECT id, expected_checkout FROM attendance_logs
       WHERE id = $1
         AND called_at + (hours || ' hours')::interval + interval '4 hours' > now()`,
     [last.id]
@@ -201,42 +201,40 @@ async function openCheckIn(employeeId) {
   return fresh[0] || null;
 }
 
-// Naplánovaný čas odhlášení = nejbližší očekávaný čas příchodu objektu (dnešní) + délka směny.
-// Pokud objekt nemá žádný rozvrh, vrátí NULL (odhlášení se pak nehlídá časově).
-// Vrátí čas nejbližšího dnešního odchodu (HH:MM), pokud je JEŠTĚ v budoucnu
-// (tj. odhlásit se zatím nemá). Když už nejbližší čas nastal (nebo objekt nemá
-// žádný dnešní čas odchodu), vrátí null → odhlášení je povoleno.
-async function checkoutTooEarly(siteId) {
+// Spočítá NEJBLIŽŠÍ očekávaný čas odchodu objektu po zadaném okamžiku.
+// Počítá se jednou při přihlášení a uloží se k záznamu (attendance_logs.expected_checkout).
+// Den v týdnu se posuzuje podle dne ODCHODU – noční směna z pondělí 18:30
+// tak najde úterní čas 6:30. Bez rozvrhu vrátí NULL (odchod se pak nehlídá).
+const CHECKOUT_TOLERANCE_MIN = 10; // o kolik dřív než plánovaný čas smí odhlásit
+
+async function computeExpectedCheckout(siteId, fromTs) {
   const { rows } = await pool.query(
-    `SELECT to_char(expected_time, 'HH24:MI') AS t, dow FROM site_checkout_schedules
-      WHERE site_id = $1 AND active = TRUE`,
-    [siteId]
+    `SELECT MIN(q.local_ts AT TIME ZONE 'Europe/Prague') AS expected
+       FROM (
+         SELECT ((($1::timestamptz AT TIME ZONE 'Europe/Prague')::date
+                  + (g.d || ' days')::interval)::date + cs.expected_time) AS local_ts,
+                cs.dow
+           FROM site_checkout_schedules cs
+           CROSS JOIN generate_series(0, 7) AS g(d)
+          WHERE cs.site_id = $2 AND cs.active = TRUE
+       ) q
+      WHERE q.local_ts > ($1::timestamptz AT TIME ZONE 'Europe/Prague')
+        AND position(EXTRACT(ISODOW FROM q.local_ts)::text IN q.dow) > 0`,
+    [fromTs, siteId]
   );
-  if (rows.length === 0) return null; // bez času odchodu lze odhlásit kdykoli
+  return rows[0]?.expected || null;
+}
 
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Prague', hour12: false, hour: '2-digit', minute: '2-digit', weekday: 'short',
-  }).formatToParts(new Date());
-  const g = (t) => parts.find((p) => p.type === t)?.value;
-  let nowH = parseInt(g('hour'), 10); if (nowH === 24) nowH = 0;
-  const nowMin = nowH * 60 + parseInt(g('minute'), 10);
-  const wk = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
-  const today = wk[g('weekday')];
-
-  // Jen časy platné dnes (dle dnů). Najdeme nejbližší k aktuálnímu času.
-  let bestTime = null, bestDiff = Infinity;
-  for (const r of rows) {
-    if (!String(r.dow || '').includes(String(today))) continue;
-    const [h, m] = r.t.split(':').map(Number);
-    const diff = Math.abs(h * 60 + m - nowMin);
-    if (diff < bestDiff) { bestDiff = diff; bestTime = r.t; }
-  }
-  if (!bestTime) return null; // dnes žádný čas odchodu → lze odhlásit
-
-  const [bh, bm] = bestTime.split(':').map(Number);
-  const bestMin = bh * 60 + bm;
-  // Nejbližší čas je v budoucnu → ještě ne (vrátíme ho pro hlášku). Jinak povolíme.
-  return bestMin > nowMin ? bestTime : null;
+// Smí se teď odhlásit? Vychází z očekávaného času uloženého u přihlášení.
+// Povoleno od (očekávaný čas − tolerance). Vrátí čas jako text, pokud je ještě brzy.
+async function checkoutTooEarly(openLog) {
+  if (!openLog || !openLog.expected_checkout) return null; // bez rozvrhu lze kdykoli
+  const { rows } = await pool.query(
+    `SELECT to_char($1::timestamptz AT TIME ZONE 'Europe/Prague', 'HH24:MI') AS t,
+            (now() >= $1::timestamptz - ($2 || ' minutes')::interval) AS allowed`,
+    [openLog.expected_checkout, CHECKOUT_TOLERANCE_MIN]
+  );
+  return rows[0].allowed ? null : rows[0].t;
 }
 
 // Zapíše přihlášení. Na objektu s odhlašováním navíc uloží očekávaný čas odhlášení.
@@ -250,11 +248,15 @@ async function doCheckIn(emp, site, callerNumber, callSid, twiml) {
     return;
   }
   const shiftHours = emp.shift_hours || SHIFT_HOURS;
+  // Na objektu s odhlašováním si rovnou uložíme, kdy se má odhlásit.
+  const expected = site.requires_checkout
+    ? await computeExpectedCheckout(site.id, new Date().toISOString())
+    : null;
   await pool.query(
     `INSERT INTO attendance_logs
-       (employee_id, site_id, event_type, caller_number, caller_verified, call_sid, hours)
-     VALUES ($1, $2, 'check_in', $3, TRUE, $4, $5)`,
-    [emp.id, site.id, callerNumber, callSid, shiftHours]
+       (employee_id, site_id, event_type, caller_number, caller_verified, call_sid, hours, expected_checkout)
+     VALUES ($1, $2, 'check_in', $3, TRUE, $4, $5, $6)`,
+    [emp.id, site.id, callerNumber, callSid, shiftHours, expected]
   );
   twiml.say(SAY, `Děkujeme, ${emp.name}. Byli jste přihlášeni do služby na objektu ${site.name}. Přejeme klidnou směnu, na slyšenou.`);
   twiml.hangup();
@@ -273,7 +275,7 @@ async function doCheckOut(emp, site, twiml) {
 
   // Pravidlo "dříve odejít nejde": vezmeme dnešní platné časy odchodu objektu
   // a najdeme nejbližší k aktuálnímu času. Pokud je nejbližší v budoucnu → ještě ne.
-  const notYet = await checkoutTooEarly(site.id);
+  const notYet = await checkoutTooEarly(open);
   if (notYet) {
     twiml.say(SAY, `Odhlášení zatím není možné. Odhlaste se prosím až v ${notYet} nebo později. Na slyšenou.`);
     twiml.hangup();
@@ -306,19 +308,38 @@ app.get('/api/on-site', requireAuth, async (_req, res) => {
   const { rows } = await pool.query(`
     WITH last_event AS (
       SELECT DISTINCT ON (l.employee_id)
-             l.employee_id, l.event_type, l.site_id, l.called_at, l.hours
+             l.employee_id, l.event_type, l.site_id, l.called_at, l.hours, l.expected_checkout
         FROM attendance_logs l
        ORDER BY l.employee_id, l.called_at DESC
     )
     SELECT e.name AS employee, e.pin_code, s.name AS site,
            le.called_at AS since,
-           le.called_at + (le.hours || ' hours')::interval AS until,
-           le.hours
+           -- U objektu s odhlašováním ukazujeme očekávaný čas odchodu z rozvrhu,
+           -- jinak čas automatického odhlášení (nástup + délka směny).
+           CASE WHEN COALESCE(s.requires_checkout, FALSE)
+                THEN le.expected_checkout
+                ELSE le.called_at + (le.hours || ' hours')::interval
+           END AS until,
+           le.hours,
+           COALESCE(s.requires_checkout, FALSE) AS requires_checkout,
+           le.expected_checkout,
+           -- Neodhlásil se, i když už měl.
+           (COALESCE(s.requires_checkout, FALSE)
+            AND le.expected_checkout IS NOT NULL
+            AND now() > le.expected_checkout) AS overdue
       FROM last_event le
       JOIN employees e ON e.id = le.employee_id
  LEFT JOIN sites s     ON s.id = le.site_id
      WHERE le.event_type = 'check_in'
-       AND le.called_at + (le.hours || ' hours')::interval > now()
+       AND (
+             -- Běžný objekt: automatické odhlášení po délce směny.
+             (COALESCE(s.requires_checkout, FALSE) = FALSE
+              AND le.called_at + (le.hours || ' hours')::interval > now())
+             -- Objekt s odhlašováním: drží se, dokud se neodhlásí,
+             -- nejdéle však délka směny + 4 h (pak už se může znovu přihlásit).
+          OR (COALESCE(s.requires_checkout, FALSE) = TRUE
+              AND le.called_at + (le.hours || ' hours')::interval + interval '4 hours' > now())
+           )
      ORDER BY le.called_at DESC
   `);
   res.json(rows);

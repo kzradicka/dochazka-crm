@@ -345,6 +345,12 @@ td input, td select { padding: 6px 8px; }
 .badge.ok   { background: var(--green-soft); color: #146b45; border-color: rgba(31,138,91,.3); }
 .badge.warn { background: var(--red-soft);   color: #8c1610; border-color: rgba(166,17,10,.28); }
 
+/* Řádek přehledu, kde chybí odhlášení */
+tbody tr.row-overdue td { background: var(--red-soft); }
+tbody tr.row-overdue:hover td { background: rgba(166,17,10,.14); }
+.hint-note { color: var(--muted); font-size: 12px; }
+
+
 /* =========================================================================
    Přihlášení (zůstává tmavé)
    ========================================================================= */
