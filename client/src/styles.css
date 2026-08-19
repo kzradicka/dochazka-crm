@@ -1,38 +1,42 @@
 /* =========================================================================
-   Docházkový systém B+H — tmavý design (styl RPO)
-   Cílí na existující názvy tříd, žádná změna v JSX není potřeba.
+   Docházkový systém B+H — vzhled sladěný s RPO
+   Tmavé menu vlevo, světlý obsah vpravo.
    ========================================================================= */
 
 :root {
-  --bg:       #0d0d0f;
-  --bg-2:     #0a0a0c;
-  --panel:    #17171b;
-  --panel-2:  #1f1f24;
-  --panel-3:  #26262c;
-  --line:     #2b2b31;   /* používá se i v inline stylech komponent */
-  --text:     #ececee;
-  --muted:    #9a9aa2;   /* používá se i v inline stylech komponent */
-  --navy:     #E4A615;   /* h3 nadpisy v komponentách -> zlatý akcent */
-  --gold:     #E4A615;
-  --gold-2:   #F4C24A;
-  --gold-soft: rgba(228, 166, 21, 0.12);
-  --red:      #A6110A;
-  --red-soft: rgba(166, 17, 10, 0.16);
-  --green:    #2f9e6b;
-  --green-soft: rgba(47, 158, 107, 0.16);
-  --radius:   14px;
-  --shadow:   0 10px 30px rgba(0, 0, 0, 0.45);
+  /* tmavé menu */
+  --side:        #111113;
+  --side-2:      #1b1b1f;
+  --side-line:   #2a2a30;
+  --side-text:   #e8e8ea;
+  --side-muted:  #8d8d95;
+
+  /* světlý obsah */
+  --bg:          #f6f3ec;
+  --surface:     #ffffff;
+  --line:        #e2ddd2;
+  --text:        #1c1c1e;
+  --muted:       #6d6a63;
+  --navy:        #1c1c1e;
+
+  --gold:        #E4A615;
+  --gold-2:      #F4C24A;
+  --gold-soft:   rgba(228, 166, 21, 0.14);
+  --red:         #A6110A;
+  --red-soft:    rgba(166, 17, 10, 0.09);
+  --green:       #1f8a5b;
+  --green-soft:  rgba(31, 138, 91, 0.12);
+
+  --radius:      12px;
+  --shadow:      0 1px 2px rgba(0,0,0,.05), 0 8px 24px rgba(0,0,0,.05);
 }
 
 * { box-sizing: border-box; }
-
 html, body, #root { height: 100%; }
 
 body {
   margin: 0;
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(228,166,21,0.06), transparent 60%),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, "Helvetica Neue", Arial, sans-serif;
   font-size: 15px;
@@ -40,130 +44,141 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3 { color: var(--text); font-weight: 700; letter-spacing: .2px; }
-h2 { font-size: 22px; margin: 4px 0 18px; }
+h1, h2, h3 { color: var(--text); font-weight: 700; letter-spacing: -.01em; }
+h2 { font-size: 24px; margin: 0 0 6px; }
 h3 { font-size: 16px; }
 p  { color: var(--muted); }
-a  { color: var(--gold); text-decoration: none; }
-
-/* ---------- plovoucí instalační odkaz (mimo React) ---------- */
-#install-link {
-  position: fixed;
-  right: 14px;
-  bottom: 14px;
-  z-index: 60;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 9px 14px;
-  font-size: 13px;
-  font-weight: 700;
-  color: #1a1305;
-  background: linear-gradient(180deg, var(--gold-2), var(--gold));
-  border-radius: 999px;
-  box-shadow: var(--shadow);
-}
-#install-link::before { content: "⤓"; font-size: 15px; }
-@media (display-mode: standalone) { #install-link { display: none; } }
+a  { color: inherit; text-decoration: none; }
 
 /* =========================================================================
-   Aplikační shell
+   Shell
    ========================================================================= */
-.app {
-  display: flex;
-  min-height: 100vh;
-}
+.app { display: flex; min-height: 100vh; }
 
 .sidebar {
-  width: 264px;
-  flex: 0 0 264px;
-  background: linear-gradient(180deg, #131317, #0e0e11);
-  border-right: 1px solid var(--line);
-  padding: 22px 16px;
+  width: 232px;
+  flex: 0 0 232px;
+  background: var(--side);
+  color: var(--side-text);
+  border-right: 1px solid #000;
   display: flex;
   flex-direction: column;
-  gap: 6px;
   position: sticky;
   top: 0;
   height: 100vh;
 }
 
+/* ---- značka ---- */
 .brand {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  text-align: center;
-  gap: 8px;
-  padding: 8px 6px 18px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-  font-size: 0;               /* schová původní textový obsah "Docházka · ostraha" */
-  color: transparent;
+  gap: 11px;
+  padding: 18px 16px 16px;
+  border-bottom: 1px solid var(--side-line);
 }
-.brand::before {
-  content: "";
-  width: 84px;
-  height: 102px;
-  background: url("/icons/logo-bh.png") center / contain no-repeat;
-  filter: drop-shadow(0 6px 14px rgba(0,0,0,0.55));
+.brand-logo {
+  width: 40px;
+  height: auto;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 3px 8px rgba(0,0,0,.5));
 }
-.brand::after {
-  content: "Docházkový systém";
-  font-size: 15px;
+.brand-text { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.brand-title {
+  font-size: 19px;
   font-weight: 800;
-  letter-spacing: .3px;
-  color: var(--text);
+  color: var(--gold);
+  letter-spacing: .5px;
 }
-
-.sidebar nav {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 6px;
-}
-.sidebar nav a {
-  display: block;
-  padding: 11px 14px;
-  border-radius: 10px;
-  color: var(--muted);
+.brand-sub {
+  font-size: 9.5px;
   font-weight: 600;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: background .15s, color .15s, border-color .15s;
+  color: var(--side-muted);
+  letter-spacing: 1.1px;
+  margin-top: 3px;
   white-space: nowrap;
 }
-.sidebar nav a:hover { background: var(--panel-2); color: var(--text); }
+
+/* ---- navigace ---- */
+.sidebar nav { display: flex; flex-direction: column; padding: 10px 0; }
+.sidebar nav a {
+  display: block;
+  padding: 11px 18px;
+  color: var(--side-muted);
+  font-size: 14.5px;
+  font-weight: 500;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background .13s, color .13s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar nav a:hover { background: var(--side-2); color: var(--side-text); }
 .sidebar nav a.active {
   background: var(--gold-soft);
   color: var(--gold-2);
-  border-color: rgba(228,166,21,0.35);
+  border-left-color: var(--gold);
+  font-weight: 700;
 }
 
-.logout {
+/* ---- patička menu ---- */
+.side-foot {
   margin-top: auto;
-  padding: 11px 14px;
-  border-radius: 10px;
-  color: var(--muted);
-  font-weight: 600;
-  cursor: pointer;
-  text-align: center;
-  border: 1px solid var(--line);
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--side-line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.logout:hover { color: #ff8a80; border-color: rgba(166,17,10,0.5); background: var(--red-soft); }
 
+.view-switch { display: flex; gap: 4px; }
+.view-switch button {
+  width: 30px;
+  height: 28px;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--side-muted);
+  cursor: pointer;
+  transition: .13s;
+}
+.view-switch button svg { width: 17px; height: 17px; }
+.view-switch button:hover { color: var(--side-text); background: var(--side-2); }
+.view-switch button.active {
+  color: var(--gold-2);
+  background: var(--gold-soft);
+  border-color: rgba(228,166,21,.35);
+}
+
+.side-link {
+  font-size: 12.5px;
+  color: var(--side-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  width: fit-content;
+}
+.side-link:hover { color: var(--gold-2); }
+.side-link.is-on  { color: #6fce9f; cursor: default; text-decoration: none; }
+.side-link.is-off { color: #d98b85; cursor: default; text-decoration: none; }
+
+/* ---- obsah ---- */
 .main {
   flex: 1 1 auto;
-  padding: 30px 34px;
-  max-width: 1200px;
+  padding: 30px 34px 60px;
+  max-width: 1180px;
   width: 100%;
-  margin: 0 auto;
 }
 
 /* =========================================================================
    Karty
    ========================================================================= */
 .card {
-  background: var(--panel);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 20px;
@@ -181,28 +196,26 @@ label {
   font-weight: 600;
   color: var(--muted);
   margin-bottom: 5px;
-  text-transform: uppercase;
-  letter-spacing: .4px;
 }
 
 input, select, textarea {
   width: 100%;
-  padding: 10px 12px;
-  background: var(--panel-2);
+  padding: 9px 11px;
+  background: var(--surface);
   color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  border: 1px solid #cfc9bb;
+  border-radius: 9px;
   font-size: 14px;
+  font-family: inherit;
   outline: none;
-  transition: border-color .15s, box-shadow .15s;
+  transition: border-color .13s, box-shadow .13s;
 }
-input::placeholder, textarea::placeholder { color: #6c6c74; }
+input::placeholder, textarea::placeholder { color: #a8a49a; }
 input:focus, select:focus, textarea:focus {
   border-color: var(--gold);
   box-shadow: 0 0 0 3px var(--gold-soft);
 }
-select { appearance: none; cursor: pointer; }
-input[type="date"], input[type="datetime-local"] { color-scheme: dark; }
+select { cursor: pointer; }
 
 .filters, .row-form {
   display: flex;
@@ -210,7 +223,7 @@ input[type="date"], input[type="datetime-local"] { color-scheme: dark; }
   align-items: flex-end;
   gap: 12px;
 }
-.filters .f, .row-form .f { flex: 1 1 160px; min-width: 130px; }
+.filters .f, .row-form .f { flex: 1 1 165px; min-width: 130px; }
 
 /* =========================================================================
    Tlačítka
@@ -218,66 +231,48 @@ input[type="date"], input[type="datetime-local"] { color-scheme: dark; }
 button { font-family: inherit; }
 
 .btn-primary, .btn-ghost {
-  padding: 10px 16px;
-  border-radius: 10px;
+  padding: 9px 16px;
+  border-radius: 9px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: transform .05s, filter .15s, background .15s, border-color .15s;
+  transition: .13s;
   white-space: nowrap;
 }
-.btn-primary {
-  background: linear-gradient(180deg, var(--gold-2), var(--gold));
-  color: #1a1305;
-}
-.btn-primary:hover { filter: brightness(1.06); }
-.btn-primary:active { transform: translateY(1px); }
-.btn-primary:disabled { opacity: .5; cursor: not-allowed; filter: none; }
+.btn-primary { background: #1c1c1e; color: #fff; }
+.btn-primary:hover { background: #333338; }
+.btn-primary:disabled { opacity: .45; cursor: not-allowed; }
 
-.btn-ghost {
-  background: transparent;
-  color: var(--text);
-  border-color: var(--line);
-}
-.btn-ghost:hover { background: var(--panel-2); border-color: var(--gold); }
+.btn-ghost { background: var(--surface); color: var(--text); border-color: #cfc9bb; }
+.btn-ghost:hover { background: #f0ece3; border-color: #b9b2a2; }
 .btn-ghost:disabled { opacity: .45; cursor: not-allowed; }
 
-/* malé tlačítko uvnitř tabulek (edit/smazat) */
-td .btn-primary, td .btn-ghost { padding: 6px 11px; font-size: 13px; margin-right: 6px; }
+td .btn-primary, td .btn-ghost { padding: 5px 11px; font-size: 13px; margin-right: 6px; }
 
 /* =========================================================================
    Tabulky
    ========================================================================= */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 6px;
-}
+table { width: 100%; border-collapse: collapse; }
 thead th {
   text-align: left;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .5px;
   color: var(--muted);
-  padding: 12px 12px;
-  background: var(--panel-2);
+  padding: 11px 12px;
   border-bottom: 1px solid var(--line);
+  background: #faf8f4;
+  white-space: nowrap;
 }
-thead th:first-child { border-top-left-radius: 10px; }
-thead th:last-child  { border-top-right-radius: 10px; }
-tbody td {
-  padding: 12px 12px;
-  border-bottom: 1px solid var(--line);
-  vertical-align: middle;
-}
-tbody tr:hover td { background: rgba(255,255,255,0.02); }
+tbody td { padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tbody tr:hover td { background: #faf8f4; }
 tbody tr:last-child td { border-bottom: none; }
-td input, td select { padding: 7px 9px; }
+td input, td select { padding: 6px 8px; }
 
 /* =========================================================================
-   Toolbar živého přehledu
+   Toolbar / stavy
    ========================================================================= */
 .toolbar {
   display: flex;
@@ -291,52 +286,50 @@ td input, td select { padding: 7px 9px; }
 }
 .live-dot {
   display: inline-block;
-  width: 9px;
-  height: 9px;
+  width: 8px; height: 8px;
   border-radius: 50%;
   background: var(--green);
   margin-right: 8px;
-  box-shadow: 0 0 0 0 rgba(47,158,107,.6);
   animation: pulse 1.8s infinite;
 }
 @keyframes pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(47,158,107,.5); }
-  70%  { box-shadow: 0 0 0 8px rgba(47,158,107,0); }
-  100% { box-shadow: 0 0 0 0 rgba(47,158,107,0); }
+  0%   { box-shadow: 0 0 0 0 rgba(31,138,91,.45); }
+  70%  { box-shadow: 0 0 0 7px rgba(31,138,91,0); }
+  100% { box-shadow: 0 0 0 0 rgba(31,138,91,0); }
 }
 
-/* =========================================================================
-   Stavové prvky
-   ========================================================================= */
 .empty {
-  padding: 26px;
+  padding: 34px 20px;
   text-align: center;
   color: var(--muted);
   font-size: 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: #faf8f4;
 }
 .err {
   background: var(--red-soft);
-  border: 1px solid rgba(166,17,10,0.5);
-  color: #ff9b93;
-  padding: 10px 14px;
-  border-radius: 10px;
+  border: 1px solid rgba(166,17,10,.28);
+  color: #8c1610;
+  padding: 10px 13px;
+  border-radius: 9px;
   margin-bottom: 14px;
   font-size: 14px;
 }
 
 .badge {
   display: inline-block;
-  padding: 4px 10px;
+  padding: 3px 10px;
   border-radius: 999px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   border: 1px solid transparent;
 }
-.badge.ok   { background: var(--green-soft); color: #7ee0b0; border-color: rgba(47,158,107,.4); }
-.badge.warn { background: var(--red-soft);   color: #ff9b93; border-color: rgba(166,17,10,.5); }
+.badge.ok   { background: var(--green-soft); color: #146b45; border-color: rgba(31,138,91,.3); }
+.badge.warn { background: var(--red-soft);   color: #8c1610; border-color: rgba(166,17,10,.28); }
 
 /* =========================================================================
-   Přihlášení
+   Přihlášení (zůstává tmavé)
    ========================================================================= */
 .login-wrap {
   min-height: 100vh;
@@ -344,103 +337,142 @@ td input, td select { padding: 7px 9px; }
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background:
-    radial-gradient(900px 500px at 50% -20%, rgba(228,166,21,0.10), transparent 60%),
-    var(--bg-2);
+  background: radial-gradient(900px 500px at 50% -20%, rgba(228,166,21,.10), transparent 60%), var(--side);
 }
 .login-card {
   width: 100%;
   max-width: 380px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 18px;
+  background: #17171b;
+  border: 1px solid var(--side-line);
+  border-radius: 16px;
   padding: 34px 28px;
-  box-shadow: var(--shadow);
+  box-shadow: 0 20px 50px rgba(0,0,0,.5);
   text-align: center;
+  color: var(--side-text);
 }
 .login-card::before {
   content: "";
   display: block;
-  width: 112px;
-  height: 136px;
+  width: 104px; height: 127px;
   margin: 0 auto 16px;
   background: url("/icons/logo-bh.png") center / contain no-repeat;
-  filter: drop-shadow(0 8px 20px rgba(0,0,0,0.6));
+  filter: drop-shadow(0 8px 20px rgba(0,0,0,.6));
 }
-.login-card h1 { font-size: 22px; margin: 0 0 4px; }
-.login-card p  { margin: 0 0 20px; color: var(--muted); }
-.login-card input { margin-bottom: 12px; text-align: left; }
-.login-card .btn-primary { width: 100%; margin-top: 4px; padding: 12px; }
-.login-card .err { text-align: left; }
+.login-card h1 { font-size: 21px; margin: 0 0 4px; color: var(--side-text); }
+.login-card p  { margin: 0 0 20px; color: var(--side-muted); }
+.login-card input {
+  margin-bottom: 12px;
+  text-align: left;
+  background: #1f1f24;
+  color: var(--side-text);
+  border-color: #34343c;
+}
+.login-card input::placeholder { color: #7a7a83; }
+.login-card .btn-primary {
+  width: 100%;
+  margin-top: 4px;
+  padding: 12px;
+  background: linear-gradient(180deg, var(--gold-2), var(--gold));
+  color: #1a1305;
+  font-weight: 700;
+}
+.login-card .btn-primary:hover { filter: brightness(1.06); background: linear-gradient(180deg, var(--gold-2), var(--gold)); }
+.login-card .err { text-align: left; background: rgba(166,17,10,.18); border-color: rgba(166,17,10,.5); color: #ff9b93; }
 
 /* =========================================================================
-   Responzivita
+   ROZLOŽENÍ — telefon
+   Platí automaticky do 820 px (režim "auto") nebo ručním přepnutím.
    ========================================================================= */
-
-/* tablet / užší okno */
-@media (max-width: 1100px) {
-  .main { padding: 24px 22px; }
+.app.view-mobile { flex-direction: column; }
+.app.view-mobile .sidebar {
+  width: 100%; flex: none; height: auto;
+  position: sticky; top: 0; z-index: 40;
+  border-right: none; border-bottom: 1px solid #000;
 }
+.app.view-mobile .brand { padding: 11px 13px; border-bottom: none; }
+.app.view-mobile .brand-logo { width: 30px; }
+.app.view-mobile .brand-title { font-size: 16px; }
+.app.view-mobile .brand-sub { font-size: 8.5px; }
+.app.view-mobile nav {
+  flex-direction: row;
+  overflow-x: auto;
+  padding: 0 8px 6px;
+  gap: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.app.view-mobile nav a {
+  padding: 8px 12px;
+  font-size: 13.5px;
+  border-left: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 7px;
+}
+.app.view-mobile nav a.active { border-left: none; border-bottom-color: var(--gold); }
+.app.view-mobile .side-foot {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 13px;
+  flex-wrap: wrap;
+}
+.app.view-mobile .main { padding: 18px 14px 44px; max-width: none; }
+.app.view-mobile h2 { font-size: 20px; }
+.app.view-mobile .card { padding: 15px; }
+.app.view-mobile .filters .f, .app.view-mobile .row-form .f { flex: 1 1 100%; }
+.app.view-mobile .filters .btn-primary, .app.view-mobile .filters .btn-ghost,
+.app.view-mobile .row-form .btn-primary, .app.view-mobile .row-form .btn-ghost { flex: 1 1 100%; }
+.app.view-mobile .card table { display: block; overflow-x: auto; white-space: nowrap; }
 
-/* telefon: boční panel -> horní lišta, tabulky vodorovně rolovatelné */
-@media (max-width: 860px) {
-  .app { flex-direction: column; }
-
-  .sidebar {
-    width: 100%;
-    flex: none;
-    height: auto;
-    position: sticky;
-    top: 0;
-    z-index: 40;
-    flex-direction: column;
-    padding: 12px 12px;
-    gap: 10px;
+@media (max-width: 820px) {
+  .app.view-auto { flex-direction: column; }
+  .app.view-auto .sidebar {
+    width: 100%; flex: none; height: auto;
+    position: sticky; top: 0; z-index: 40;
+    border-right: none; border-bottom: 1px solid #000;
   }
-  .brand {
-    flex-direction: row;
-    gap: 10px;
-    padding: 2px 4px 12px;
-    margin-bottom: 2px;
-  }
-  .brand::before { width: 38px; height: 46px; }
-  .brand::after { font-size: 15px; }
-
-  .sidebar nav {
-    flex-direction: row;
-    overflow-x: auto;
-    gap: 6px;
-    margin: 0;
-    padding-bottom: 2px;
+  .app.view-auto .brand { padding: 11px 13px; border-bottom: none; }
+  .app.view-auto .brand-logo { width: 30px; }
+  .app.view-auto .brand-title { font-size: 16px; }
+  .app.view-auto .brand-sub { font-size: 8.5px; }
+  .app.view-auto nav {
+    flex-direction: row; overflow-x: auto; padding: 0 8px 6px; gap: 4px;
     -webkit-overflow-scrolling: touch;
   }
-  .sidebar nav a { padding: 9px 13px; font-size: 14px; }
-
-  .logout {
-    margin-top: 0;
-    align-self: flex-start;
-    padding: 8px 13px;
-    font-size: 13px;
+  .app.view-auto nav a {
+    padding: 8px 12px; font-size: 13.5px;
+    border-left: none; border-bottom: 2px solid transparent; border-radius: 7px;
   }
-
-  .main { padding: 18px 14px; }
-  h2 { font-size: 19px; }
-
-  .card { padding: 15px; }
-
-  /* filtry a formuláře na plnou šířku pod sebou */
-  .filters .f, .row-form .f { flex: 1 1 100%; min-width: 0; }
-  .filters .btn-primary, .filters .btn-ghost,
-  .row-form .btn-primary, .row-form .btn-ghost { flex: 1 1 100%; }
-
-  /* tabulky: vodorovné rolování místo rozbití layoutu */
-  .card > table,
-  .main > .card table { display: block; overflow-x: auto; white-space: nowrap; }
-
-  #install-link { left: 14px; right: 14px; bottom: 12px; justify-content: center; }
+  .app.view-auto nav a.active { border-left: none; border-bottom-color: var(--gold); }
+  .app.view-auto .side-foot {
+    flex-direction: row; align-items: center; gap: 14px; padding: 9px 13px; flex-wrap: wrap;
+  }
+  .app.view-auto .main { padding: 18px 14px 44px; max-width: none; }
+  .app.view-auto h2 { font-size: 20px; }
+  .app.view-auto .card { padding: 15px; }
+  .app.view-auto .filters .f, .app.view-auto .row-form .f { flex: 1 1 100%; }
+  .app.view-auto .filters .btn-primary, .app.view-auto .filters .btn-ghost,
+  .app.view-auto .row-form .btn-primary, .app.view-auto .row-form .btn-ghost { flex: 1 1 100%; }
+  .app.view-auto .card table { display: block; overflow-x: auto; white-space: nowrap; }
 }
 
-@media (max-width: 480px) {
-  body { font-size: 14px; }
-  .login-card { padding: 26px 20px; }
+/* =========================================================================
+   ROZLOŽENÍ — tablet (užší menu, kompaktnější obsah)
+   ========================================================================= */
+.app.view-tablet .sidebar { width: 196px; flex-basis: 196px; }
+.app.view-tablet .brand-sub { font-size: 8.5px; letter-spacing: .8px; }
+.app.view-tablet nav a { font-size: 13.5px; padding: 10px 15px; }
+.app.view-tablet .main { padding: 24px 22px 50px; }
+.app.view-tablet .card table { display: block; overflow-x: auto; white-space: nowrap; }
+
+@media (min-width: 821px) and (max-width: 1120px) {
+  .app.view-auto .sidebar { width: 196px; flex-basis: 196px; }
+  .app.view-auto .brand-sub { font-size: 8.5px; letter-spacing: .8px; }
+  .app.view-auto nav a { font-size: 13.5px; padding: 10px 15px; }
+  .app.view-auto .main { padding: 24px 22px 50px; }
+  .app.view-auto .card table { display: block; overflow-x: auto; white-space: nowrap; }
 }
+
+/* =========================================================================
+   ROZLOŽENÍ — počítač vynuceně (na úzkém okně umožní vodorovné rolování)
+   ========================================================================= */
+.app.view-desktop { min-width: 1000px; }
